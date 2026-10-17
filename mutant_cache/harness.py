@@ -90,10 +90,11 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
 
     g = p.add_argument_group("backbone")
     g.add_argument("--backbone", default="esmc_300m",
-                   help="passed to mutant_cache.backbone.load_esmc; the "
-                        "special value 'stub' loads tests/fixtures.StubESMC, "
-                        "which is how this harness is tested before the real "
-                        "backbone lands")
+                   help="passed to mutant_cache.backbone.load_esmc. Two "
+                        "special values: 'stub' loads tests/fixtures.StubESMC, "
+                        "and 'random:D:H:L' builds the real ESM-C architecture "
+                        "at a toy size with random weights — the real cache "
+                        "code path, no checkpoint, meaningless numbers.")
     g.add_argument("--precision", choices=["fp32", "bf16"], default="fp32")
     g.add_argument("--device", default=None)
     g.add_argument("--train-backbone", action="store_true",
@@ -321,6 +322,14 @@ def load_backbone(args, device, dtype):
         m = mod.make_stub_backbone(d_model=args.stub_dim, n_layers=args.stub_layers,
                                    seed=args.seed)
         return m.to(device)
+    if args.backbone.startswith("random:"):
+        # the real ESM-C architecture with random weights: exercises the real
+        # cache code path end to end with no checkpoint download. Useful for a
+        # plumbing run; the numbers mean nothing.
+        from mutant_cache.backbone.esmc import ESMC
+        d, h, n = (int(x) for x in args.backbone.split(":")[1:4])
+        torch.manual_seed(args.seed)
+        return ESMC(d, h, n).to(device=device, dtype=dtype).eval()
     from mutant_cache.backbone import load_esmc
     return load_esmc(args.backbone, device=device, dtype=dtype)
 

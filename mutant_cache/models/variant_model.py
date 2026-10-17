@@ -150,17 +150,18 @@ class VariantBatch:
     mutated positions in the group, and variants with fewer mutations are padded
     with the reference residue at the slots they do not mutate.
 
-    **Padding is not free, and it is worth knowing exactly how.**  §1 says
+    **Padding is only free if the backbone takes ``var_mask``.**  §1 says
     variant queries attend to "reference keys at non-variant positions", and
     "non-variant" is defined by the shared ``positions`` vector — so a padded
-    slot withholds that reference key from *every* variant in the group, not
-    only from the ones that actually mutate it.  A variant's prediction
-    therefore depends slightly on which other variants share its forward pass
-    (a couple of percent of the score on the stub).  It is deterministic given
-    the frame, and ``exact_position_groups=True`` removes it entirely by
-    batching only variants that mutate exactly the same sites.  Use that when
-    a number has to be reproducible outside its batch; use the default for
-    training, where batches have to be list-sized for the ranking loss.
+    slot would withhold that reference key from *every* variant in the group,
+    and a variant's score would depend on who it was batched with.  Passing
+    ``var_mask`` fixes it completely: the backbone clamps padded slots to the
+    reference residual at every layer and keeps them visible as reference
+    keys, so each variant sees the whole reference regardless of the union.
+    ``VariantEffectModel`` detects and uses it automatically.  For a backbone
+    without it, ``exact_position_groups=True`` batches only variants that
+    mutate exactly the same sites, which removes padding altogether at the
+    cost of smaller (and more correlated) lists for the ranking loss.
     """
     target_id: str
     score_set_id: str
@@ -480,10 +481,17 @@ class VariantEffectModel(nn.Module):
                 z = z * t.std().clamp_min(1e-6) + t.mean()
             return z
 
-        out = type(ref)(layer_inputs=[rnd(t) for t in ref.layer_inputs],
-                        final=rnd(ref.final),
-                        **({"ids": getattr(ref, "ids", None)}
-                           if hasattr(ref, "ids") else {}))
+        # Copy rather than reconstruct: ReferenceStates carries fields this
+        # module has no business knowing about (final_prenorm, a memoized kv
+        # cache, ...) and §1 is free to add more.
+        import copy
+        out = copy.copy(ref)
+        out.layer_inputs = [rnd(t) for t in ref.layer_inputs]
+        out.final = rnd(ref.final)
+        if getattr(ref, "final_prenorm", None) is not None:
+            out.final_prenorm = rnd(ref.final_prenorm)
+        if hasattr(out, "kv"):
+            out.kv = None          # memoized from the real states; now stale
         self._random_ref_cache[key] = out
         return out
 
