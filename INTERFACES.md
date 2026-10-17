@@ -95,3 +95,24 @@ parse_mutant("A23G:K45R") -> [(23, "A", "G"), (45, "K", "R")]   # 1-based
 `depth_spearman(df, pred_col, score_col) -> DataFrame` with per score set
 Spearman at depth buckets 1/2/3/4/5+ and overall; `reliability` column carried
 through where known.
+
+## Deviations / clarifications (section 1, as implemented)
+
+Nothing in section 1 was impossible for ESM-C; these are additions and
+pinned-down semantics (`mutant_cache/backbone/esmc.py`, `mutant_cache/cache/`):
+
+- `forward_variants(ref, positions, variant_ids, var_mask=None, output_logits=True, output_layers=False)`;
+  `vout.layer_hidden` is filled only with `output_layers=True` (per-block outputs, pre final norm).
+  `vout.hidden` is post final norm (same space as `out.hidden`).
+- `ReferenceStates` also carries `ids`, `final_prenorm`, and lazily memoized per-layer
+  reference `kv` (normed + rotated K, V). `ref.final` is post final norm.
+  `forward_reference(ids, grad=False)` runs under `no_grad` by default.
+- `var_mask[n, j] = False` makes slot j *exactly* a non-variant position for variant n
+  (clamped to the reference every layer, no adapters, visible as a reference key, outputs = reference).
+- `variant_extra_embed` is called with the variant token embeddings `(N, K, d)`; its output is added.
+- With `var_mask`, padded slots are reference keys: hidden by `disable_cross_attention`,
+  not affected by `variant_attn_mask`.
+- Variant-only LoRA (`mutant_cache.cache.lora.attach_variant_lora`): ESM-C fuses q/k/v and gate/up,
+  so targets are logical names `q,k,v,o,gate,up,down` (default `q,o,gate,up,down`); adapters live in
+  `model.variant_adapters`. `forward_variants_bruteforce` honours adapters (applied on variant rows only).
+- The variant path computes attention scores/softmax in fp32 regardless of model dtype.
