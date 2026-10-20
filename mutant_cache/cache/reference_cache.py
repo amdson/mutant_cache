@@ -53,10 +53,15 @@ def seq_sha1(sequence: str) -> str:
 
 
 def base_fingerprint(model: ESMC) -> str:
-    """Cheap hash of a strided sample of every base parameter."""
+    """Cheap hash of a strided sample of every base parameter, plus shared
+    adapters (they change the reference stream; variant adapters do not)."""
     h = hashlib.sha1()
+    params = list(model.base_parameters())
+    if getattr(model, "shared_adapters", None) is not None:
+        params += [(f"shared_adapters.{n}", p)
+                   for n, p in model.shared_adapters.named_parameters()]
     with torch.no_grad():
-        for name, p in model.base_parameters():
+        for name, p in params:
             flat = p.detach().reshape(-1)
             sample = flat[:: max(1, flat.numel() // 64)][:64].float().cpu()
             h.update(name.encode())

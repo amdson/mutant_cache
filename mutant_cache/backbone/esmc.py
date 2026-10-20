@@ -193,6 +193,10 @@ class ESMC(nn.Module):
         variant query i -> variant key j.
       * ``disable_cross_attention``: variant queries see only variant keys.
       * ``variant_adapters``: set by ``mutant_cache.cache.lora.attach_variant_lora``.
+
+    ``shared_adapters`` (``attach_shared_lora``) are not a variant-path hook:
+    they are a low-rank change to the base weights, so ``forward`` applies them
+    too (and with them, ``forward_reference``).
     """
 
     def __init__(self, d_model: int, n_heads: int, n_layers: int,
@@ -217,6 +221,7 @@ class ESMC(nn.Module):
         self.variant_attn_mask: Optional[torch.Tensor] = None
         self.disable_cross_attention: bool = False
         self.variant_adapters: Optional[nn.ModuleList] = None
+        self.shared_adapters: Optional[nn.ModuleList] = None
 
         self._inv_freq_cache: dict = {}
 
@@ -245,9 +250,10 @@ class ESMC(nn.Module):
                             self.inv_freq(positions.device))
 
     def base_parameters(self):
-        """Backbone parameters (everything except variant adapters / hooks)."""
+        """Backbone parameters (everything except adapters / hooks)."""
         for n, p in self.named_parameters():
-            if not (n.startswith("variant_adapters.") or n.startswith("variant_extra_embed.")):
+            if not n.startswith(("variant_adapters.", "shared_adapters.",
+                                 "variant_extra_embed.")):
                 yield n, p
 
     def freeze_base(self, freeze: bool = True) -> "ESMC":
@@ -270,9 +276,15 @@ class ESMC(nn.Module):
         x = self.embed(ids)
         cos, sin = self.rope(torch.arange(L, device=self.device), x.dtype)
         layer_inputs = []
-        for blk in self.blocks:
-            layer_inputs.append(x)
-            x = blk(x, cos, sin, mask)
+        if self.shared_adapters is None:
+            for blk in self.blocks:            # stock path: parity with official esm
+                layer_inputs.append(x)
+                x = blk(x, cos, sin, mask)
+        else:
+            from mutant_cache.cache.variant_cache import _full_block
+            for blk, sh in zip(self.blocks, self.shared_adapters):
+                layer_inputs.append(x)
+                x = _full_block(self, blk, x, cos, sin, mask, (sh, None), None)
         hidden = self.transformer.norm(x)
         logits = self.sequence_head(hidden)
         return ESMCOutput(logits=logits, hidden=hidden, layer_inputs=layer_inputs,

@@ -449,6 +449,11 @@ class VariantEffectModel(nn.Module):
         """
         if batch.ref is not None:
             return batch.ref
+        if self._shared_lora() and self.training:
+            # trainable shared adapters move the reference every step:
+            # recompute it (with grad, so they learn through it), never cache
+            return self.backbone.forward_reference(batch.ref_ids,
+                                                   grad=torch.is_grad_enabled())
         key = (batch.target_id, int(batch.ref_ids.shape[0]))
         if use_cache and key in self._ref_cache:
             return self._ref_cache[key]
@@ -465,6 +470,17 @@ class VariantEffectModel(nn.Module):
     def clear_reference_cache(self) -> None:
         self._ref_cache.clear()
         self._random_ref_cache.clear()
+
+    def _shared_lora(self) -> bool:
+        return getattr(self.backbone, "shared_adapters", None) is not None
+
+    def train(self, mode: bool = True):
+        # With shared adapters the cached references go stale whenever the
+        # weights move. Every train <-> eval switch (i.e. around each
+        # evaluation) drops them; within an eval pass the cache is valid.
+        if self._shared_lora():
+            self.clear_reference_cache()
+        return super().train(mode)
 
     def _randomize(self, ref, key: str):
         """The 'random reference states' ablation: ESM-C activations replaced by

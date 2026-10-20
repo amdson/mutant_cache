@@ -115,4 +115,9 @@ pinned-down semantics (`mutant_cache/backbone/esmc.py`, `mutant_cache/cache/`):
 - Variant-only LoRA (`mutant_cache.cache.lora.attach_variant_lora`): ESM-C fuses q/k/v and gate/up,
   so targets are logical names `q,k,v,o,gate,up,down` (default `q,o,gate,up,down`); adapters live in
   `model.variant_adapters`. `forward_variants_bruteforce` honours adapters (applied on variant rows only).
+- Shared LoRA (`attach_shared_lora`): `model.shared_adapters`, a low-rank change to the base applied
+  everywhere — `ESMC.forward` (so `forward_reference`), the reference K/V, and all variant rows. Without
+  it `ESMC.forward` takes the stock path (official-parity). The reference then depends on trainable
+  weights: `VariantEffectModel` recomputes it with grad in train mode and drops its cache on every
+  train/eval switch; `base_fingerprint` covers shared adapters.
 - The variant path computes attention scores/softmax in fp32 regardless of model dtype.

@@ -25,7 +25,8 @@ Ordered so the go/no-go experiment comes first. Dataset notes: DATASETS.md.
 
 ## Phase 3 — model
 16. Variant tokens (position, alt residue) cross-attending cached ref states every layer; variant-variant attention = interaction module.
-17. Variant-only LoRA; frozen bf16 base, fp32 adapters.
+17. Variant-only LoRA; frozen bf16 base, fp32 adapters (harness `--lora-r`).
+17b. Optional shared LoRA on both streams (`--shared-lora-r`): lets the wild-type context move too; costs the reference cache during training. Compare head-only vs +variant vs +shared.
 18. Head: pooled variant tokens + ref summary + assay embedding; additive part initialised from ESM-C masked marginals.
 19. Loss: within-score-set rank/pairwise or MSE on rank-normalized; ddG MSE for Megascale.
 20. Ablation switches: additive, no-cross-attn, random-ref, position-only.

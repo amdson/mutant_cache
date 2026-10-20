@@ -102,6 +102,26 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
                         "wants variant-only LoRA over a frozen bf16 base, and "
                         "a frozen reference is also what makes the reference "
                         "cache (and therefore the recompute control) honest.")
+    g.add_argument("--lora-r", type=int, default=0,
+                   help="variant-only LoRA rank (0 = off): adapters on the "
+                        "variant stream alone; the reference stays a constant")
+    g.add_argument("--shared-lora-r", type=int, default=0,
+                   help="shared LoRA rank (0 = off): a low-rank change to the "
+                        "base, applied to the reference AND variant streams, so "
+                        "the wild-type context the variants read can move too. "
+                        "Costs the reference cache during training (the "
+                        "reference is recomputed with grad every batch)")
+    g.add_argument("--lora-alpha", type=float, default=None,
+                   help="LoRA alpha for both sets (default 2*r)")
+    g.add_argument("--lora-targets", nargs="+", default=None,
+                   help="variant LoRA projections, from q k v o gate up down; "
+                        "default q o gate up down (the ones applied only to the "
+                        "variant stream; adapting k/v makes variant and "
+                        "reference keys use different projections)")
+    g.add_argument("--shared-lora-targets", nargs="+", default=None,
+                   help="shared LoRA projections (default q o gate up down)")
+    g.add_argument("--lora-lr", type=float, default=None,
+                   help="learning rate for both adapter sets (default --lr)")
     g.add_argument("--stub-dim", type=int, default=32, help="--backbone stub only")
     g.add_argument("--stub-layers", type=int, default=2, help="--backbone stub only")
 
@@ -332,6 +352,42 @@ def load_backbone(args, device, dtype):
         return ESMC(d, h, n).to(device=device, dtype=dtype).eval()
     from mutant_cache.backbone import load_esmc
     return load_esmc(args.backbone, device=device, dtype=dtype)
+
+
+def attach_lora(args, backbone) -> None:
+    """Attach the requested adapter sets. Called after the base is frozen and
+    the masked-marginal prior is computed (fresh adapters are the identity, so
+    the prior is the base model's either way). Adapters are fp32 and trainable;
+    they live inside the backbone, so the optimizer adds them explicitly."""
+    if not (args.lora_r or args.shared_lora_r):
+        return
+    from mutant_cache.backbone.esmc import ESMC
+    from mutant_cache.cache.lora import (DEFAULT_TARGETS, LoRAConfig,
+                                         attach_shared_lora, attach_variant_lora)
+    if not isinstance(backbone, ESMC):
+        raise ValueError("LoRA needs the ESM-C backbone (not --backbone stub)")
+
+    def cfg(r, targets):
+        return LoRAConfig(r=r, alpha=args.lora_alpha or 2.0 * r,
+                          targets=tuple(targets or DEFAULT_TARGETS))
+    freeze = not args.train_backbone
+    if args.lora_r:
+        attach_variant_lora(backbone, cfg(args.lora_r, args.lora_targets), freeze_base=freeze)
+    if args.shared_lora_r:
+        attach_shared_lora(backbone, cfg(args.shared_lora_r, args.shared_lora_targets),
+                           freeze_base=freeze)
+    for which in ("variant", "shared"):
+        ps = _adapter_parameters(backbone, which)
+        if ps:
+            print(f"  {which} LoRA: {sum(p.numel() for p in ps):,} params (fp32)")
+
+
+def _adapter_parameters(backbone, which: str = "all") -> list:
+    if getattr(backbone, "variant_adapters", None) is None and \
+            getattr(backbone, "shared_adapters", None) is None:
+        return []
+    from mutant_cache.cache.lora import lora_parameters
+    return lora_parameters(backbone, which)
 
 
 def prepare_frames(args) -> dict:
@@ -611,6 +667,8 @@ def run(args) -> dict:
         print(f"  masked marginals for {len(llr)} target(s) "
               f"({time.time() - t0:.1f}s)")
 
+    attach_lora(args, backbone)
+
     assay_index = {s: i for i, s in
                    enumerate(sorted(set(tr["score_set_id"]) | set(ev["score_set_id"])))}
     bkw = dict(assay_index=assay_index, batch_size=args.batch_size,
@@ -743,8 +801,14 @@ def _depth_delta(a: pd.DataFrame, b: pd.DataFrame) -> dict:
 def train(model, lossfn, tr_batches, ev_batches, ev, args, history, run_dir):
     head = model.head_parameters()
     groups = [{"params": head, "lr": args.lr}]
+    adapters = _adapter_parameters(model.backbone)
+    if adapters:
+        groups.append({"params": adapters,
+                       "lr": args.lora_lr if args.lora_lr is not None else args.lr})
     if args.train_backbone:
-        groups.append({"params": list(model.backbone.parameters()),
+        ids = {id(p) for p in adapters}
+        groups.append({"params": [p for p in model.backbone.parameters()
+                                  if id(p) not in ids],
                        "lr": args.backbone_lr})
     opt = torch.optim.AdamW(groups, weight_decay=args.weight_decay)
     base_lrs = [g["lr"] for g in opt.param_groups]

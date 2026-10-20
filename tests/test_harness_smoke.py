@@ -59,6 +59,30 @@ def test_harness_runs_end_to_end(data, tmp_path, precision):
     assert np.allclose(m["score"].astype(float), m["score_src"])
 
 
+@pytest.mark.parametrize("lora", [["--lora-r", "4"], ["--lora-r", "4", "--shared-lora-r", "4"]])
+def test_harness_trains_lora_adapters(data, tmp_path, lora):
+    """Adapters live inside the backbone, so a frozen-base loop that only
+    optimizes head_parameters() would silently never touch them. lora_B starts
+    at zero: nonzero after training means the optimizer updated it."""
+    args = harness.build_parser().parse_args([
+        "--data-dir", str(data), "--dataset", "synth", "--split", "protein",
+        "--backbone", "random:64:4:2", "--device", DEV, "--epochs", "1",
+        "--batch-size", "16", "--baselines", "none", *lora,
+        "--output", str(tmp_path / "run"), "--out-root", str(tmp_path)])
+    res = harness.run(args)
+    assert res["status"] == "ok"
+    bb = res["model"].backbone
+    sets = {"variant": bb.variant_adapters, "shared": bb.shared_adapters}
+    for name, ad in sets.items():
+        if name == "shared" and "--shared-lora-r" not in lora:
+            assert ad is None
+            continue
+        Bs = [p for n, p in ad.named_parameters() if n.endswith("lora_B")]
+        assert Bs and all(p.dtype == torch.float32 for p in Bs)
+        assert sum(p.abs().sum().item() for p in Bs) > 0, f"{name} adapters never updated"
+    assert all(not p.requires_grad for _, p in bb.base_parameters())
+
+
 def test_load_split_falls_back_to_shared_splits_dir(tmp_path, monkeypatch):
     """The data layer writes splits to $MUTANT_CACHE_SCRATCH/processed/splits/,
     not under each dataset; the harness must find them there."""

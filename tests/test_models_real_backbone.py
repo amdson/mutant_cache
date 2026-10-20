@@ -194,3 +194,44 @@ def test_zero_shot_reads_the_mutated_row():
     M = torch.arange(10 * 64, dtype=torch.float).view(10, 64)   # entry = 64*row + col
     df = pd.DataFrame({"target_id": ["T"], "mutant": ["A3G"]})
     assert score_variants(df, {"T": M}, aa_to_id=aa)[0] == 64 * 3 + 6
+
+
+def test_dual_lora_trains_through_the_model_and_never_serves_a_stale_reference(real, llr):
+    """Shared adapters move the reference: in train mode it is recomputed with
+    grad (so shared adapters learn through it), and an evaluation after the
+    weights move must not reuse a reference cached before."""
+    from mutant_cache.cache.lora import (LoRAConfig, attach_shared_lora, attach_variant_lora,
+                                         detach_shared_lora, detach_variant_lora)
+    bb, seqs, df, muts, _ = real
+    attach_variant_lora(bb, LoRAConfig(r=4))
+    attach_shared_lora(bb, LoRAConfig(r=4))
+    try:
+        m = _fit_ready(bb)
+        bs, _ = build_variant_batches(df, seqs, dict(bb.aa_to_id), tokenizer=bb.tokenizer,
+                                      batch_size=len(muts), marginals=llr)
+        _, p0 = m.predict(bs)                      # caches the reference (eval)
+        m.train()
+        # in train mode the reference is live: shared adapters learn through it
+        assert m.reference_states(bs[0]).final.requires_grad
+        out = m(bs[0])
+        assert out.pred.requires_grad
+        out.pred.sum().backward()
+        for ad in (bb.variant_adapters, bb.shared_adapters):   # lora_B is zero: its grad is the signal
+            gB = [p.grad for n, p in ad.named_parameters() if n.endswith("lora_B")]
+            assert all(g is not None for g in gB) and sum(g.abs().sum() for g in gB) > 0
+        with torch.no_grad():
+            for n, p in bb.shared_adapters.named_parameters():
+                if n.endswith("lora_B"):
+                    p.normal_(0, 0.05)
+        _, p1 = m.predict(bs)
+        m.clear_reference_cache()                  # force a fresh reference
+        _, p2 = m.predict(bs)
+        assert (p1 - p0).abs().max() > 1e-4
+        # the post-update evaluation used the moved reference, not the cached one
+        assert torch.allclose(p1, p2, atol=1e-6), (p1 - p2).abs().max()
+    finally:
+        detach_variant_lora(bb)
+        detach_shared_lora(bb)
+        for p in bb.parameters():
+            p.requires_grad_(False)
+            p.grad = None

@@ -29,6 +29,12 @@ streams (it is per-token, so the reference keys' norm is cached with them).
 The approximation: reference positions never attend to the variants, so every
 non-variant token's state is the wild-type one. Everything else is exact.
 
+Adapters (`mutant_cache.cache.lora`): ``model.variant_adapters`` act on variant
+rows only; ``model.shared_adapters`` are a low-rank change to the base weights
+and act everywhere — `ESMC.forward` (so the reference), the reference K/V, and
+every variant row (padded slots included; they are clamped to the reference
+anyway).
+
 Backends
 --------
 * `forward_variants`            — efficient: O(N·K·L) attention per layer.
@@ -124,7 +130,7 @@ class VariantOutput:
 # ---------------------------------------------------------------------------- #
 def _reference_kv_layer(model: ESMC, layer: int, x: torch.Tensor, cos, sin):
     """Rotated, normed reference K and V for block ``layer`` from its input
-    ``x`` (1, L, d). Base weights only — never adapters."""
+    ``x`` (1, L, d). Base weights plus shared adapters — never variant ones."""
     attn = model.blocks[layer].attn
     d, h, dh = model.d_model, model.n_heads, model.head_dim
     L = x.shape[1]
@@ -132,6 +138,9 @@ def _reference_kv_layer(model: ESMC, layer: int, x: torch.Tensor, cos, sin):
     w = attn.layernorm_qkv[1].weight
     k = F.linear(xn, w[d:2 * d])
     v = F.linear(xn, w[2 * d:])
+    shared = (_adapter(model, layer)[0], None)
+    k = _add(k, _delta(shared, "k", xn, None))
+    v = _add(v, _delta(shared, "v", xn, None))
     k = attn.k_ln(k).to(xn.dtype)
     k = apply_rope(k.view(1, L, h, dh), cos, sin).transpose(1, 2)
     v = v.view(1, L, h, dh).transpose(1, 2)
@@ -159,9 +168,10 @@ def forward_reference(model: ESMC, ids: torch.Tensor, grad: bool = False,
 
     ``grad=False`` (default) runs under ``no_grad``: with a frozen base the
     reference is a constant and can be reused across steps and variants.
-    ``grad=True`` keeps the graph (e.g. to fine-tune the base through the
-    reference stream; then the states must not be cached across steps).
-    Uses only the stock blocks, so adapters can never reach it."""
+    ``grad=True`` keeps the graph (to train shared adapters or the base through
+    the reference stream; then the states must not be cached across steps).
+    Runs `ESMC.forward`, which never sees variant adapters (shared ones, being a
+    change to the base, it does apply)."""
     ids = ids.reshape(-1).to(model.device)
     with (nullcontext() if grad else torch.no_grad()):
         out = model(ids[None])
@@ -227,17 +237,23 @@ def _clamp(x, ref_layer, positions, var_mask):
 
 
 def _adapter(model: ESMC, i: int):
-    ad = model.variant_adapters
-    return None if ad is None else ad[i]
+    """(shared, variant) adapters of block ``i``; either may be None."""
+    sh = getattr(model, "shared_adapters", None)
+    va = model.variant_adapters
+    return (None if sh is None else sh[i], None if va is None else va[i])
 
 
 def _delta(ad, name, x, rowmask):
-    if ad is None:
-        return None
-    dlt = ad.delta(name, x)
-    if dlt is None or rowmask is None:
-        return dlt
-    return dlt * rowmask.to(dlt.dtype)
+    """Summed LoRA delta for projection ``name``: shared on every row, variant
+    only on ``rowmask`` rows. ``ad`` is a (shared, variant) pair."""
+    sh, va = ad
+    out = None if sh is None else sh.delta(name, x)
+    dlt = None if va is None else va.delta(name, x)
+    if dlt is not None and rowmask is not None:
+        dlt = dlt * rowmask.to(dlt.dtype)
+    if dlt is None:
+        return out
+    return dlt if out is None else out + dlt
 
 
 def _add(base, dlt):
@@ -373,9 +389,10 @@ def forward_variants(model: ESMC, ref: ReferenceStates, positions, variant_ids,
 # Bruteforce oracle                                                             #
 # ---------------------------------------------------------------------------- #
 def _full_block(model: ESMC, blk, x, cos, sin, mask, ad, rowmask):
-    """One ordinary full-sequence block (SDPA, boolean mask), with adapter
-    deltas applied only on ``rowmask`` rows. Without adapters this is the same
-    computation as ``ESMCBlock.forward``."""
+    """One ordinary full-sequence block (SDPA, boolean mask). ``ad`` is a
+    (shared, variant) adapter pair: shared deltas on every row, variant deltas
+    only on ``rowmask`` rows. Without adapters this is the same computation as
+    ``ESMCBlock.forward``."""
     B, L, d = x.shape
     h, dh = model.n_heads, model.head_dim
     attn = blk.attn

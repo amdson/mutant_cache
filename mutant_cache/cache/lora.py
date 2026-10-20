@@ -37,6 +37,21 @@ What it does NOT buy
 It cannot make the reference positions attend to the mutations: in this
 approximation non-variant tokens are always computed as wild type.
 
+Shared adapters (the second, optional LoRA)
+-------------------------------------------
+Variant adapters move the variant stream alone; they cannot change the wild-type
+context the variants read. ``attach_shared_lora`` adds a second set,
+``model.shared_adapters``, applied on *both* streams — it is a low-rank change
+to the base weights themselves: ``ESMC.forward`` (hence ``forward_reference``),
+the reference K/V, and the variant stream all add it. With both attached, the
+variant stream sees base + shared + variant deltas and the reference sees
+base + shared. Neither set alone spans that pair (cf. svar's ``--train-base``).
+
+The price is point 1 above: while shared adapters train, the reference is no
+longer a constant, so it is recomputed with gradients every step (one batch-1
+forward per target per batch; cheap for proteins). Both sets keep fp32
+parameters over the bf16 base.
+
 Targets
 -------
 ESM-C fuses q/k/v into one ``layernorm_qkv`` Linear and gate/up into ``ffn[1]``;
@@ -133,13 +148,36 @@ def attach_variant_lora(model: ESMC, cfg: LoRAConfig | None = None,
     return model
 
 
+def attach_shared_lora(model: ESMC, cfg: LoRAConfig | None = None,
+                       freeze_base: bool = True) -> ESMC:
+    """Attach fresh shared adapters (fp32) to ``model.shared_adapters``: applied
+    on the reference *and* variant streams (see module docstring)."""
+    cfg = cfg or LoRAConfig()
+    model.shared_adapters = nn.ModuleList(
+        [VariantLayerAdapters(model.d_model, cfg) for _ in range(model.n_layers)]
+    ).to(device=model.device)
+    model.shared_lora_config = cfg
+    if freeze_base:
+        model.freeze_base(True)
+    return model
+
+
 def detach_variant_lora(model: ESMC) -> ESMC:
     model.variant_adapters = None
     return model
 
 
-def lora_parameters(model: ESMC) -> list[nn.Parameter]:
-    return [] if model.variant_adapters is None else list(model.variant_adapters.parameters())
+def detach_shared_lora(model: ESMC) -> ESMC:
+    model.shared_adapters = None
+    return model
+
+
+def lora_parameters(model: ESMC, which: str = "all") -> list[nn.Parameter]:
+    """Adapter parameters: ``which`` in {"all", "variant", "shared"}."""
+    sets = {"variant": [model.variant_adapters],
+            "shared": [getattr(model, "shared_adapters", None)],
+            "all": [model.variant_adapters, getattr(model, "shared_adapters", None)]}[which]
+    return [p for m in sets if m is not None for p in m.parameters()]
 
 
 def lora_state_dict(model: ESMC) -> dict:
@@ -150,6 +188,7 @@ def cast_base(model: ESMC, dtype: torch.dtype) -> ESMC:
     """Cast the model to ``dtype`` but keep adapters fp32 (``module.to``
     would drag them along and lose the fp32 master copy)."""
     model.to(dtype=dtype)
-    if model.variant_adapters is not None:
-        model.variant_adapters.to(dtype=torch.float32)
+    for ad in (model.variant_adapters, getattr(model, "shared_adapters", None)):
+        if ad is not None:
+            ad.to(dtype=torch.float32)
     return model
