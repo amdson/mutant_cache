@@ -13,6 +13,9 @@ contracts between modules.
 - **One-off / experiment / scratch scripts: keep the raw version, no processing.**
   Copy experiment scripts into `experiments/` exactly as run — no argparse, no
   refactoring, hardcoded paths are fine.
+- **Precision:** experiments run a frozen bf16 base with fp32 heads/adapters
+  (`harness --precision` defaults to bf16). Equivalence tests, oracles, and
+  sanity notebooks stay fp32 (`load_esmc` default) — bf16 noise would hide bugs.
 - **Correctness oracle first.** Every cache path has a bruteforce counterpart
   and a test comparing them; every backbone port has an equivalence test
   against the official `esm` package.

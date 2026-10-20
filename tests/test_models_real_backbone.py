@@ -62,7 +62,7 @@ def _fit_ready(bb, **kw):
 
 
 def _scores(m, bb, seqs, df, muts, llr, backend=None):
-    bs, _ = build_variant_batches(df, seqs, dict(bb.aa_to_id), batch_size=len(muts),
+    bs, _ = build_variant_batches(df, seqs, dict(bb.aa_to_id), tokenizer=bb.tokenizer, batch_size=len(muts),
                                   marginals=llr)
     assert len(bs) == 1
     b = bs[0]
@@ -135,7 +135,7 @@ def test_position_only_is_invariant_to_alt_identity(real):
 def test_gradients_reach_the_head_through_the_real_cache(real, llr):
     bb, seqs, df, muts, _ = real
     m = _fit_ready(bb)
-    bs, _ = build_variant_batches(df, seqs, dict(bb.aa_to_id),
+    bs, _ = build_variant_batches(df, seqs, dict(bb.aa_to_id), tokenizer=bb.tokenizer,
                                   batch_size=len(muts), marginals=llr)
     out = m(bs[0])
     out.pred.sum().backward()
@@ -145,3 +145,52 @@ def test_gradients_reach_the_head_through_the_real_cache(real, llr):
     assert any(float(g.abs().sum()) > 0 for g in grads.values())
     # the backbone stays frozen
     assert all(p.grad is None for p in bb.parameters())
+
+
+@pytest.mark.parametrize("kw", [dict(ablation="none"), dict(ablation="none", ref_summary="attn"),
+                                dict(ablation="additive")])
+def test_bf16_backbone_with_fp32_head(real, llr, kw):
+    """The harness default: frozen bf16 base, fp32 head. Backbone states must be
+    cast at the head boundary, and predict() must hand back CPU indices even when
+    batches live on the GPU."""
+    bb, seqs, df, muts, _ = real
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    bb16 = ESMC(64, 4, 2).eval()
+    bb16.load_state_dict(bb.state_dict())
+    bb16 = bb16.to(device=dev, dtype=torch.bfloat16)
+    m32 = _fit_ready(bb, **kw)
+    m16 = _fit_ready(bb16, **kw).to(dev)
+    assert m16.additive_proj.weight.dtype == torch.float32
+    ref, _ = _scores(m32, bb, seqs, df, muts, llr)
+    bs, _ = build_variant_batches(df, seqs, dict(bb.aa_to_id), tokenizer=bb.tokenizer, batch_size=len(muts),
+                                  marginals=llr)
+    idx, pred = m16.predict([b.to(dev) for b in bs])
+    assert idx.device.type == "cpu" and pred.dtype == torch.float32
+    got = {muts[int(i)]: float(v) for i, v in zip(idx, pred)}
+    for k in muts:
+        assert got[k] == pytest.approx(ref[k], abs=0.05 * (1 + abs(ref[k])))
+
+
+def test_batches_substitute_the_named_residue(real):
+    """`A3G` is token 3 (BOS at 0): the slot the model mutates must hold the
+    wild-type residue named in the mutant string, and the reference must be the
+    backbone's own encoding (ESM-C <eos> is 2, not the stub's 1)."""
+    bb, seqs, df, muts, (m1, m2, m3) = real
+    seq = seqs["T"]
+    bs, _ = build_variant_batches(df[df.mutant == m2], seqs, dict(bb.aa_to_id),
+                                  tokenizer=bb.tokenizer)
+    b = bs[0]
+    assert torch.equal(b.ref_ids, bb.tokenizer.encode(seq))
+    assert int(b.ref_ids[-1]) == bb.tokenizer.eos_token_id
+    p = int(m2[1:-1])
+    assert b.positions.tolist() == [p]
+    assert int(b.ref_ids[p]) == bb.aa_to_id[m2[0]] == bb.aa_to_id[seq[p - 1]]
+    assert int(b.variant_ids[0, 0]) == bb.aa_to_id[m2[-1]]
+
+
+def test_zero_shot_reads_the_mutated_row():
+    from mutant_cache.baselines.zero_shot import score_variants
+    aa = {"A": 5, "G": 6}
+    M = torch.arange(10 * 64, dtype=torch.float).view(10, 64)   # entry = 64*row + col
+    df = pd.DataFrame({"target_id": ["T"], "mutant": ["A3G"]})
+    assert score_variants(df, {"T": M}, aa_to_id=aa)[0] == 64 * 3 + 6

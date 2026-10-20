@@ -211,6 +211,7 @@ def build_variant_batches(
     se_col: str | None = "score_se",
     weight_col: str | None = None,
     bos_offset: int = 1,
+    tokenizer=None,
     max_union_positions: int | None = None,
     exact_position_groups: bool = False,
     shuffle_seed: int | None = None,
@@ -236,7 +237,7 @@ def build_variant_batches(
     for r in variants.itertuples(index=True):
         muts = parse_mutant(getattr(r, "mutant"))
         rows.append((r.Index, r.score_set_id, r.target_id,
-                     tuple(p + bos_offset for p, _, _ in muts),
+                     tuple(p - 1 + bos_offset for p, _, _ in muts),   # 1-based residue -> token
                      tuple(a for _, _, a in muts), muts))
 
     batches: list[VariantBatch] = []
@@ -273,8 +274,11 @@ def build_variant_batches(
         if cur:
             chunks.append(cur)
 
-        ref_ids = torch.tensor(
-            [0] + [aa_to_id[c] for c in seq] + [1], dtype=torch.long)
+        if tokenizer is not None:
+            ref_ids = tokenizer.encode(seq).long()
+        else:   # tests/fixtures.StubTokenizer layout: 0 = BOS, 1 = EOS
+            ref_ids = torch.tensor(
+                [0] + [aa_to_id[c] for c in seq] + [1], dtype=torch.long)
 
         for chunk in chunks:
             pos = sorted({p for it in chunk for p in it[3]})
@@ -286,11 +290,13 @@ def build_variant_batches(
             vmask = torch.zeros(len(chunk), kk, dtype=torch.bool)
             for i, it in enumerate(chunk):
                 for (p, ref_aa, alt_aa) in it[5]:
-                    j = pidx[p + bos_offset]
-                    if seq[p - 1] != ref_aa:
+                    tok_p = p - 1 + bos_offset
+                    j = pidx[tok_p]
+                    # check the token actually substituted, not just the string
+                    if int(ref_ids[tok_p]) != aa_to_id[ref_aa]:
                         raise ValueError(
-                            f"{ssid}/{tid}: mutant says {ref_aa}{p} but sequence "
-                            f"has {seq[p - 1]}{p}")
+                            f"{ssid}/{tid}: mutant says {ref_aa}{p} but token "
+                            f"{tok_p} is {int(ref_ids[tok_p])} (sequence has {seq[p - 1]}{p})")
                     vids[i, j] = aa_to_id[alt_aa]
                     vmask[i, j] = True
             idx = [it[0] for it in chunk]
@@ -496,7 +502,7 @@ class VariantEffectModel(nn.Module):
         return out
 
     def _ref_summary(self, ref) -> torch.Tensor:
-        h = ref.final                                  # (1, L+2, d)
+        h = ref.final.to(self.ref_proj.weight.dtype)   # (1, L+2, d); bf16 base -> fp32 head
         body = h[:, 1:-1] if h.shape[1] > 2 else h
         if self.cfg.ref_summary == "attn":
             w = (body @ self.ref_query) / self.cfg.d_model ** 0.5
@@ -628,9 +634,9 @@ class VariantEffectModel(nn.Module):
             ref, batch.positions, exp_ids, exp_mask, eye,
             self._extra_embed(batch, variant_ids=exp_ids,
                               assay_ids=batch.assay_ids[rows]), backend)
-        hm = vout.hidden[ar, slots]                          # (M, d)
+        hm = vout.hidden[ar, slots].to(h.dtype)              # (M, d)
         s = self.additive_proj(hm).squeeze(-1)               # (M,)
-        h = h.index_put((rows, slots), hm.to(h.dtype))
+        h = h.index_put((rows, slots), hm)
         token_score = token_score.index_put((rows, slots), s.to(h.dtype))
         return h, token_score
 
@@ -651,7 +657,8 @@ class VariantEffectModel(nn.Module):
             vout = self._backbone_forward(
                 ref, batch.positions, var_ids, batch.var_mask,
                 self._attn_mask(batch), self._extra_embed(batch), backend)
-            h = vout.hidden                               # (N, K, d)
+            # backbone may be bf16; the trainable head stays fp32
+            h = vout.hidden.to(self.additive_proj.weight.dtype)   # (N, K, d)
             token_score = self.additive_proj(h).squeeze(-1) * batch.var_mask.to(h.dtype)
 
         mask = batch.var_mask.to(h.dtype)
@@ -694,7 +701,7 @@ class VariantEffectModel(nn.Module):
         for b in batches:
             p = self.forward(b, backend=backend)
             out.append(p.pred.detach().float().cpu())
-            idx.append(b.row_index if b.row_index is not None
+            idx.append(b.row_index.cpu() if b.row_index is not None
                        else torch.arange(b.n))
         if not out:
             return torch.empty(0, dtype=torch.long), torch.empty(0)

@@ -10,6 +10,7 @@ Two official references, both from the installed esm 3.4.1:
 Run with ``pytest -s`` to see the numbers.
 """
 import importlib.util
+import logging
 import os
 import re
 
@@ -17,6 +18,11 @@ import pytest
 import torch
 
 from mutant_cache.backbone import load_esmc, esmc_weights_path
+
+# The official esm warns at import that fused kernels (Transformer Engine,
+# xformers, flash-attn) are missing. Keep it that way: the pure-PyTorch path is
+# the one our port matches bit-for-bit; fused kernels would make it drift.
+logging.getLogger("esm.models.esmc.kernels").setLevel(logging.ERROR)
 
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 NAME = "esmc_300m"

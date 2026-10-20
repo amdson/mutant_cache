@@ -139,7 +139,7 @@ def test_additive_ablation_masks_variant_variant_attention(world):
     for ablation, same in (("additive", True), ("none", False)):
         m = _model(bb, ablation=ablation)
         batch = _batch(seqs, tid, [f"{a}:{b}", f"{a}:{c}"])
-        slot = int((batch.positions == 4 + 1).nonzero()[0])    # the `a` token
+        slot = int((batch.positions == 4).nonzero()[0])        # the `a` token (BOS at 0)
         with torch.no_grad():
             h = m(batch).hidden
         row = {batch.row_index[i].item(): i for i in range(batch.n)}
@@ -216,7 +216,7 @@ def test_var_mask_makes_the_score_batch_independent(world):
     padded2 = run(m2, muts + [other])[muts[0]]
     exact2 = run(m2, muts + [other], exact_position_groups=True)[muts[0]]
     assert abs(padded2 - alone2) > 1e-3, (alone2, padded2)
-    assert exact2 == pytest.approx(alone2, abs=1e-6)
+    assert exact2 == pytest.approx(alone2, abs=1e-5)   # fp32, different batch size
 
 
 # ── no cross-attention ───────────────────────────────────────────────────────

@@ -87,8 +87,13 @@ def load_tables(processed_dir: str | Path) -> dict:
 
 
 def load_split(processed_dir: str | Path, name: str):
+    """``<processed_dir>/splits/<name>.parquet`` if present, else the shared
+    ``$MUTANT_CACHE_SCRATCH/processed/splits/`` that the data layer writes."""
     import pandas as pd
-    return pd.read_parquet(Path(processed_dir) / "splits" / f"{name}.parquet")
+    from mutant_cache.data.paths import splits_dir
+
+    local = Path(processed_dir) / "splits" / f"{name}.parquet"
+    return pd.read_parquet(local if local.exists() else splits_dir() / f"{name}.parquet")
 
 
 def apply_split(variants, split_df, which: str):

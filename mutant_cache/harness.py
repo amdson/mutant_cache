@@ -95,7 +95,7 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
                         "and 'random:D:H:L' builds the real ESM-C architecture "
                         "at a toy size with random weights — the real cache "
                         "code path, no checkpoint, meaningless numbers.")
-    g.add_argument("--precision", choices=["fp32", "bf16"], default="fp32")
+    g.add_argument("--precision", choices=["fp32", "bf16"], default="bf16")
     g.add_argument("--device", default=None)
     g.add_argument("--train-backbone", action="store_true",
                    help="unfreeze the backbone. Off by default: PLAN.md 17 "
@@ -614,6 +614,7 @@ def run(args) -> dict:
     assay_index = {s: i for i, s in
                    enumerate(sorted(set(tr["score_set_id"]) | set(ev["score_set_id"])))}
     bkw = dict(assay_index=assay_index, batch_size=args.batch_size,
+               tokenizer=getattr(backbone, "tokenizer", None),
                marginals=llr or None, target_col=args.target_col,
                se_col=args.se_col,
                max_union_positions=args.max_union_positions or None)

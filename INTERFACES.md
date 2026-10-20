@@ -28,7 +28,7 @@ ref = model.forward_reference(ids)      # ReferenceStates: .layer_inputs list[n_
 # has fewer mutations; pass var_mask to mark real substitutions if needed).
 vout = model.forward_variants(
     ref,                                 # ReferenceStates (batch 1, frozen)
-    positions,                           # (K,) LongTensor, token indices into ids (i.e. 1-based residue + BOS offset)
+    positions,                           # (K,) LongTensor, token indices into ids: residue p (1-based) is token p, since BOS is token 0
     variant_ids,                         # (N, K) LongTensor token ids at those positions
 )
 vout.hidden      # (N, K, d) final-layer hidden at variant positions

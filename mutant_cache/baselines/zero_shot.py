@@ -117,7 +117,7 @@ def score_variants(
             continue
         tot = 0.0
         for (p, _ref, alt) in parse_mutant(getattr(r, mutant_col)):
-            tot += float(M[p + bos_offset, aa_to_id[alt]])
+            tot += float(M[p - 1 + bos_offset, aa_to_id[alt]])   # 1-based residue -> token
         out[i] = tot
     return out
 
