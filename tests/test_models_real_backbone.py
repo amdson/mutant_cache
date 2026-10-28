@@ -129,7 +129,9 @@ def test_position_only_is_invariant_to_alt_identity(real):
                        "n_mut": 1, "score": 0.0, "score_rank": 0.5})
     m = _fit_ready(bb, ablation="position_only")
     o, _ = _scores(m, bb, seqs, df, muts, None)
-    assert max(o.values()) - min(o.values()) < 1e-6, o
+    # relative: the ragged cache puts identical rows at different kernel
+    # offsets, so they agree to fp32 rounding, not bitwise
+    assert max(o.values()) - min(o.values()) < 1e-6 * max(1.0, max(map(abs, o.values()))), o
 
 
 def test_gradients_reach_the_head_through_the_real_cache(real, llr):

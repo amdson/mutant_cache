@@ -312,6 +312,19 @@ class ESMC(nn.Module):
                                            output_logits=output_logits,
                                            output_layers=output_layers)
 
+    def forward_variants_ragged(self, ref, rv, output_logits: bool = True,
+                                output_layers: bool = False):
+        from mutant_cache.cache.variant_cache import forward_variants_ragged
+        return forward_variants_ragged(self, ref, rv, output_logits=output_logits,
+                                       output_layers=output_layers)
+
+    def forward_variants_exact(self, ref, positions, variant_ids, var_mask=None,
+                               output_logits: bool = True, output_layers: bool = False):
+        from mutant_cache.cache.variant_cache import forward_variants_exact
+        return forward_variants_exact(self, ref, positions, variant_ids,
+                                      var_mask=var_mask, output_logits=output_logits,
+                                      output_layers=output_layers)
+
 
 # ---------------------------------------------------------------------------- #
 # Loading                                                                       #

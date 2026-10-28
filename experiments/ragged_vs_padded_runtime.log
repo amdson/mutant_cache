@@ -1,0 +1,27 @@
+
+
+== BRCA1: 15369 variants, L=303, n_mut {1: 9907, 2: 4768, 3: 622, 4: 67, 5: 5}
+  eval  padded bs=32    calls=481   rows   177202 (real   21602)    17.21s       893 var/s  peak 0.05 GiB
+  eval  ragged bs=32    calls=481   rows    21602 (real   21602)     9.94s      1547 var/s  peak 0.00 GiB
+  eval  padded bs=256   calls=61    rows  1005842 (real   21602)    20.18s       762 var/s  peak 1.40 GiB
+  eval  ragged bs=256   calls=61    rows    21602 (real   21602)     1.31s     11764 var/s  peak 0.02 GiB
+  eval  ragged bs=1024  calls=16    rows    21602 (real   21602)     0.76s     20183 var/s  peak 0.06 GiB
+  train padded bs=32    calls=128   rows    47616 (real    5781)    19.07s       215 var/s  peak 2.13 GiB
+  train ragged bs=32    calls=128   rows     5781 (real    5781)    14.60s       281 var/s  peak 0.20 GiB
+  train padded bs=256   calls=nan   rows      nan (real     nan)      nans       nan var/s  peak nan GiB
+  train ragged bs=256   calls=16    rows     5661 (real    5661)     1.88s      2179 var/s  peak 0.69 GiB
+  train ragged bs=1024  calls=4     rows     6039 (real    6039)     0.51s      8110 var/s  peak 2.09 GiB
+
+
+== GB1: 20000 variants, L=265, n_mut {1: 11, 2: 290, 3: 3495, 4: 16204}
+  eval  padded bs=32    calls=625   rows    76096 (real   75892)    23.45s       853 var/s  peak 0.01 GiB
+  eval  ragged bs=32    calls=625   rows    75892 (real   75892)    13.39s      1494 var/s  peak 0.01 GiB
+  eval  padded bs=256   calls=79    rows    76864 (real   75892)     2.95s      6784 var/s  peak 0.04 GiB
+  eval  ragged bs=256   calls=79    rows    75892 (real   75892)     2.44s      8197 var/s  peak 0.03 GiB
+  eval  ragged bs=1024  calls=20    rows    75892 (real   75892)     2.18s      9164 var/s  peak 0.13 GiB
+  train padded bs=32    calls=128   rows    15680 (real   15677)    18.94s       216 var/s  peak 0.24 GiB
+  train ragged bs=32    calls=128   rows    15677 (real   15677)    13.89s       295 var/s  peak 0.19 GiB
+  train padded bs=256   calls=16    rows    16384 (real   16031)     2.38s      1719 var/s  peak 1.72 GiB
+  train ragged bs=256   calls=16    rows    16031 (real   16031)     1.74s      2349 var/s  peak 1.31 GiB
+  train ragged bs=1024  calls=5     rows    17894 (real   17894)     1.24s      3737 var/s  peak 5.08 GiB
+wrote /home/andrew/mutant_cache/experiments/ragged_vs_padded_runtime.csv

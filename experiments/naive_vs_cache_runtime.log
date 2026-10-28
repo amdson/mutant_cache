@@ -1,0 +1,17 @@
+
+== BRCA1: 15369 variants, L=303
+  eval  naive bs=32      57.41s      268 var/s  peak 0.73 GiB
+  eval  naive bs=128     55.46s      277 var/s  peak 2.91 GiB
+  eval  naive bs=512     55.35s      278 var/s  peak 11.64 GiB
+  train naive bs=8       58.62s       70 var/s  peak 2.90 GiB
+  train naive bs=32      54.29s       75 var/s  peak 11.57 GiB
+  train naive bs=64      52.87s       77 var/s  peak 23.15 GiB
+
+== GB1: 20000 variants, L=265
+  eval  naive bs=32      66.98s      299 var/s  peak 0.64 GiB
+  eval  naive bs=128     63.74s      314 var/s  peak 2.55 GiB
+  eval  naive bs=512     63.29s      316 var/s  peak 10.19 GiB
+  train naive bs=8       53.54s       77 var/s  peak 2.55 GiB
+  train naive bs=32      48.09s       85 var/s  peak 10.12 GiB
+  train naive bs=64      46.53s       88 var/s  peak 20.23 GiB
+wrote /home/andrew/mutant_cache/experiments/naive_vs_cache_runtime.csv

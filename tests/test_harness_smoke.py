@@ -97,3 +97,19 @@ def test_load_split_falls_back_to_shared_splits_dir(tmp_path, monkeypatch):
     (ds / "splits").mkdir()                              # a dataset-local copy wins
     pd.DataFrame({"target_id": ["A"], "split": ["test"]}).to_parquet(ds / "splits" / "s.parquet")
     assert load_split(ds, "s").split.tolist() == ["test"]
+
+
+def test_harness_exact_control_and_eval_batch_size(data, tmp_path):
+    out = tmp_path / "run_exact"
+    rc = harness.main([
+        "--data-dir", str(data), "--dataset", "synth", "--split", "protein",
+        "--backbone", "random:64:4:2", "--precision", "fp32", "--device", DEV,
+        "--epochs", "1", "--batch-size", "16", "--eval-batch-size", "256",
+        "--baselines", "none", "--control-backend", "exact",
+        "--throughput-variants", "32",
+        "--output", str(out), "--out-root", str(tmp_path)])
+    assert rc == 0
+    res = json.loads((out / "results.json").read_text())
+    ctl = res["extra"]["control"]
+    assert ctl["accuracy_delta_by_depth"] and ctl["throughput_ratio"] > 0
+    assert res["extra"]["model_config"]["ragged"] is True

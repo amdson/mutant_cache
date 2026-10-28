@@ -13,7 +13,8 @@ calls for differ only in *which rows train*, *which ablation is on*, and
     the gate (Phase 6)   --split depth --ablation none
     the additive control --split depth --ablation additive
     feature ablation     --ablation no_cross_attn | random_ref | position_only
-    compute control      --control-backend recompute   (same weights, both paths)
+    approximation control --control-backend exact      (same weights, full forward)
+    numerics check       --control-backend recompute   (same weights, cache oracle)
 
 Everything else — the split, the batching, the loss, the depth buckets, the
 reliability ceilings — has to stay identical or the numbers stop being
@@ -136,7 +137,14 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
                    default="none",
                    help="additionally score the SAME weights through this "
                         "backend, for the throughput ratio and the accuracy "
-                        "delta by depth (DATASETS.md's compute baseline)")
+                        "delta by depth. 'exact' is the full forward of every "
+                        "mutant (PLAN.md 22: what the cache costs in accuracy); "
+                        "'recompute' is the cache's bruteforce oracle — the same "
+                        "approximation, so its delta only checks numerics")
+    g.add_argument("--no-ragged", action="store_true",
+                   help="cache backend: use the padded shared-position path "
+                        "(cost N x union-K) instead of ragged per-variant "
+                        "positions (cost = real substitutions)")
     g.add_argument("--ref-summary", choices=["mean", "attn"], default="mean",
                    help="PLAN.md's open question: mean-pool or learned query")
     g.add_argument("--pool", choices=["mean", "sum", "max"], default="mean")
@@ -201,6 +209,10 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
                         "one reference, so this is also the list length the "
                         "ranking loss sees — too small and the within-set "
                         "ranking signal is mostly ties.")
+    g.add_argument("--eval-batch-size", type=int, default=0,
+                   help="variants per forward at evaluation (0 = --batch-size). "
+                        "Predictions do not depend on batch-mates, so this only "
+                        "changes speed; with the ragged cache, large is cheap")
     g.add_argument("--accum", type=int, default=1,
                    help="batches accumulated into one optimizer step")
     g.add_argument("--grad-clip", type=float, default=1.0, help="0 = off")
@@ -211,6 +223,14 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
                         "almost every row pads.")
 
     g = p.add_argument_group("evaluation")
+    g.add_argument("--no-select-best", action="store_true",
+                   help="keep the final weights instead of restoring the epoch "
+                        "that scored best on the eval split (which selects on "
+                        "it — fine for val, not for test)")
+    g.add_argument("--select-on-val", action="store_true",
+                   help="with --eval-split test: score VAL every epoch (logging "
+                        "val loss + Spearman), restore the best-on-val epoch, "
+                        "and score test once at the end — METL's protocol")
     g.add_argument("--eval-every", type=int, default=0,
                    help="also evaluate every N optimizer steps (0 = epoch ends)")
     g.add_argument("--baselines", nargs="*", default=["zero_shot"],
@@ -413,7 +433,9 @@ def prepare_frames(args) -> dict:
         evl = apply_split(v, sp, args.eval_split)
         if not len(evl):                      # e.g. a split with no val rows
             evl = apply_split(v, sp, "test")
+        sel = apply_split(v, sp, "val") if args.select_on_val else None
     else:
+        sel = None
         train = v.copy()
         evl = v.copy()
 
@@ -426,6 +448,7 @@ def prepare_frames(args) -> dict:
         sequences = dict(zip(targets["target_id"], targets["sequence"]))
     return {"all": v, "train": train.reset_index(drop=True),
             "eval": evl.reset_index(drop=True), "sequences": sequences,
+            "select": None if sel is None else sel.reset_index(drop=True),
             "score_sets": ss, "dir": d}
 
 
@@ -433,7 +456,7 @@ def build_config(args, backbone, n_assays: int) -> VariantModelConfig:
     return VariantModelConfig(
         d_model=int(backbone.d_model), n_assays=n_assays,
         vocab_size=int(getattr(backbone, "vocab_size", 0)) or 0,
-        ablation=args.ablation, backend=args.backend,
+        ablation=args.ablation, backend=args.backend, ragged=not args.no_ragged,
         use_position_embedding=not args.no_position_embedding,
         use_ref_residue=not args.no_ref_residue,
         assay_in_token=args.assay_in_token,
@@ -678,9 +701,21 @@ def run(args) -> dict:
                max_union_positions=args.max_union_positions or None)
     tr_batches, _ = build_variant_batches(tr, seqs, dict(backbone.aa_to_id),
                                           shuffle_seed=args.seed, **bkw)
-    ev_batches, _ = build_variant_batches(ev, seqs, dict(backbone.aa_to_id), **bkw)
+    ev_batches, _ = build_variant_batches(
+        ev, seqs, dict(backbone.aa_to_id),
+        **{**bkw, "batch_size": args.eval_batch_size or args.batch_size})
     tr_batches = [b.to(device) for b in tr_batches]
     ev_batches = [b.to(device) for b in ev_batches]
+    sel = frames["select"]
+    if args.select_on_val:
+        if args.eval_split != "test" or sel is None or not len(sel):
+            raise SystemExit("--select-on-val needs --split with val rows "
+                             "and --eval-split test")
+        sel_batches, _ = build_variant_batches(
+            sel, seqs, dict(backbone.aa_to_id),
+            **{**bkw, "batch_size": args.eval_batch_size or args.batch_size})
+        sel_batches = [b.to(device) for b in sel_batches]
+        print(f"  selecting on val: {len(sel):,} variants")
     print(f"  {len(tr_batches)} train batches, {len(ev_batches)} eval batches; "
           f"mean K = {np.mean([b.k for b in ev_batches]):.1f} positions/forward")
 
@@ -708,8 +743,9 @@ def run(args) -> dict:
             "summary": zs["summary"]}
     final = zs
     if args.epochs:
+        sel_arg = (sel_batches, sel) if args.select_on_val else None
         best, final = train(model, lossfn, tr_batches, ev_batches, ev, args,
-                            history, run_dir)
+                            history, run_dir, select=sel_arg)
 
     if args.epsilon_depths:
         final.update(epsilon_eval(model, final, frames, args, seqs,
@@ -733,10 +769,12 @@ def run(args) -> dict:
         delta = _depth_delta(final["depth_table"], ctl["depth_table"])
         table.add_depth_table(f"same weights, {args.control_backend}",
                               ctl["depth_table"], kind="control",
-                              note="full recompute control")
+                              note={"exact": "full forward of every mutant",
+                                    "recompute": "cache oracle: same approximation",
+                                    "cache": "sparse variant cache"}[args.control_backend])
         control = {"summary": ctl["summary"], "accuracy_delta_by_depth": delta}
         print(f"\n  control ({args.control_backend}): {_fmt(ctl['summary'])}")
-        print(f"  accuracy delta by depth (cache - recompute): "
+        print(f"  accuracy delta by depth ({args.backend} - {args.control_backend}): "
               + ", ".join(f"{k}:{v:+.4f}" for k, v in delta.items()))
         if args.throughput_variants:
             a = throughput(model, ev_batches, args.backend, args.throughput_variants)
@@ -798,7 +836,15 @@ def _depth_delta(a: pd.DataFrame, b: pd.DataFrame) -> dict:
     return {d: float(aa[d] - bb[d]) for d in aa.index if d in bb.index}
 
 
-def train(model, lossfn, tr_batches, ev_batches, ev, args, history, run_dir):
+def train(model, lossfn, tr_batches, ev_batches, ev, args, history, run_dir,
+          select=None):
+    """``select=(batches, frame)``: per-epoch scoring and best-epoch selection
+    use that partition (val) instead of the reported one, which is then
+    scored once at the end."""
+    mon_batches, mon = select if select is not None else (ev_batches, ev)
+    # val Spearman is NaN on METL's tiny val sets (2 rows at ds10), so
+    # selection on val uses the loss, which is always defined
+    crit = "val_loss" if select is not None else "spearman_depth_all"
     head = model.head_parameters()
     groups = [{"params": head, "lr": args.lr}]
     adapters = _adapter_parameters(model.backbone)
@@ -820,7 +866,8 @@ def train(model, lossfn, tr_batches, ev_batches, ev, args, history, run_dir):
     print(f"\n  {len(tr_batches)} batches x {args.epochs} epochs -> {total} "
           f"optimizer steps (accum {accum}, warmup {warmup})")
 
-    best = {"spearman_depth_all": -float("inf"), "step": 0, "summary": {}}
+    best = {crit: float("inf") if crit == "val_loss" else -float("inf"),
+            "step": 0, "summary": {}}
     best_state = None
     gstep = 0
     for epoch in range(args.epochs):
@@ -850,33 +897,48 @@ def train(model, lossfn, tr_batches, ev_batches, ev, args, history, run_dir):
             opt.step()
             gstep += 1
             if args.eval_every and gstep % args.eval_every == 0:
-                ev_out = evaluate(model, ev_batches, ev, args)
+                ev_out = evaluate(model, mon_batches, mon, args)
                 row = {"tag": f"step {gstep}", "step": gstep,
                        "train_loss": run_loss / max(run_n, 1), **ev_out["summary"]}
+                if select is not None:
+                    row["val_loss"] = _eval_loss(model, lossfn, mon_batches)
                 history.append(row)
-                best, best_state = _maybe_best(model, best, best_state, row)
+                best, best_state = _maybe_best(model, best, best_state, row, crit)
                 print(f"    step {gstep}: loss {row['train_loss']:.4f}  "
                       f"{_fmt(ev_out['summary'])}", flush=True)
                 model.train()
-        ev_out = evaluate(model, ev_batches, ev, args)
+        ev_out = evaluate(model, mon_batches, mon, args)
         row = {"tag": f"epoch {epoch}", "step": gstep,
                "train_loss": run_loss / max(run_n, 1), **ev_out["summary"]}
+        if select is not None:
+            row["val_loss"] = _eval_loss(model, lossfn, mon_batches)
         history.append(row)
-        best, best_state = _maybe_best(model, best, best_state, row)
+        best, best_state = _maybe_best(model, best, best_state, row, crit)
         print(f"  epoch {epoch}: loss {row['train_loss']:.4f}  "
               f"{_fmt(ev_out['summary'])}", flush=True)
 
-    if best_state is not None:
+    if best_state is not None and not args.no_select_best:
         model.load_state_dict(best_state)
     final = evaluate(model, ev_batches, ev, args)
-    print(f"\n  best ρ(all)={best['spearman_depth_all']:.4f} at step {best['step']}")
+    print(f"\n  best {crit}={best[crit]:.4f} at step {best['step']}")
     return best, final
 
 
-def _maybe_best(model, best, best_state, row):
-    v = row.get("spearman_depth_all", float("nan"))
-    if v == v and v > best["spearman_depth_all"]:
-        best = {"spearman_depth_all": v, "step": row["step"],
+@torch.no_grad()
+def _eval_loss(model, lossfn, batches) -> float:
+    model.eval()
+    tot = 0.0
+    for b in batches:
+        l, _ = lossfn(model(b).pred, b.target, group=None, se=b.se, weight=b.weight)
+        tot += float(l)
+    return tot / max(len(batches), 1)
+
+
+def _maybe_best(model, best, best_state, row, crit="spearman_depth_all"):
+    v = row.get(crit, float("nan"))
+    better = v < best[crit] if crit == "val_loss" else v > best[crit]
+    if v == v and better:
+        best = {crit: v, "step": row["step"],
                 "summary": {k: x for k, x in row.items() if k != "tag"}}
         best_state = {k: t.detach().clone() for k, t in model.state_dict().items()}
     return best, best_state

@@ -216,3 +216,84 @@ def test_single_mutant_vs_exact_forward(model, ref):
           f"\n    max|dlogp| per mut   mean {dlogp_all.mean():.4f}  max {dlogp_all.max():.4f}"
           f"\n    |LLR(alt vs wt) gap| mean {llr_gap.mean():.4f}  max {llr_gap.max():.4f}")
     assert cos_all.min() > 0.5   # sanity only: this is the approximation gap
+
+
+# ---------------------------------------------------------------------------- #
+# Cross-attention backends: fused flex vs the fp32 reference implementation     #
+# ---------------------------------------------------------------------------- #
+needs_cuda = pytest.mark.skipif(DEV != "cuda", reason="flex backend is CUDA-only")
+
+
+def _both_impls(model, ref, pos, vid, **kw):
+    return (model_fv(model, ref, pos, vid, cross_impl="flex", **kw),
+            model_fv(model, ref, pos, vid, cross_impl="reference", **kw))
+
+
+def model_fv(model, ref, pos, vid, **kw):
+    from mutant_cache.cache.variant_cache import forward_variants
+    return forward_variants(model, ref, pos, vid, **kw)
+
+
+@needs_cuda
+@pytest.mark.parametrize("K,N", [(1, 1), (3, 32), (10, 32)])
+def test_flex_vs_reference_cross_attention(model, ref, K, N):
+    _reset(model)
+    pos, vid = _random_variants(model, ref, K, N, seed=K + 31 * N)
+    g = torch.Generator().manual_seed(K)
+    vm = torch.rand(N, K, generator=g) < 0.7
+    vm[:, 0] = True
+    for tag, var_mask in (("plain", None), ("var_mask", vm.to(DEV))):
+        with torch.no_grad():
+            a, b = _both_impls(model, ref, pos, vid, var_mask=var_mask, output_layers=True)
+        d = _maxdiff(a, b)
+        print(f"  flex vs reference {tag:<10} K={K:<3} N={N:<3} "
+              + " ".join(f"{k}={v:.2e}" for k, v in d.items()))
+        assert d["hidden"] < 1e-4 and d["logits"] < 1e-3 and d["layers_rel"] < 1e-5, d
+
+
+@needs_cuda
+def test_flex_vs_reference_gradients(model, ref):
+    """Gradients through the cross branch, including its LSE (merge weights)."""
+    _reset(model)
+    torch.manual_seed(0)
+    lin = nn.Linear(model.d_model, model.d_model).to(DEV)
+    nn.init.normal_(lin.weight, std=1e-2)
+    model.variant_extra_embed = lin
+    try:
+        pos, vid = _random_variants(model, ref, 5, 16, seed=13)
+        grads = []
+        for impl in ("flex", "reference"):
+            lin.zero_grad()
+            out = model_fv(model, ref, pos, vid, cross_impl=impl)
+            out.logits.logsumexp(-1).sum().backward()
+            grads.append(lin.weight.grad.clone())
+        rel = ((grads[0] - grads[1]).abs().max() / grads[1].abs().max()).item()
+        print(f"\n  flex vs reference grad(extra_embed) rel max diff {rel:.2e}")
+        assert rel < 1e-4
+    finally:
+        _reset(model)
+
+
+@needs_cuda
+def test_flex_all_positions_variant(model, ref):
+    """K == L: no reference keys left; flex skips the cross branch."""
+    _reset(model)
+    L = ref.seq_len
+    pos = torch.arange(L, device=DEV)
+    with torch.no_grad():
+        a, b = _both_impls(model, ref, pos, ref.ids[None])
+    assert (a.hidden - b.hidden).abs().max().item() < 1e-4
+
+
+@needs_cuda
+def test_bf16_flex_vs_reference():
+    m = load_esmc("esmc_300m", device=DEV, dtype=torch.bfloat16).freeze_base()
+    r = m.forward_reference(m.tokenizer.encode(SEQ))
+    pos, vid = _random_variants(m, r, 10, 32, seed=1)
+    with torch.no_grad():
+        a, b = _both_impls(m, r, pos, vid)
+        c = m.forward_variants_bruteforce(r, pos, vid)
+    for tag, x in (("flex", a), ("reference", b)):
+        cos = F.cosine_similarity(x.hidden.float(), c.hidden.float(), dim=-1).min().item()
+        print(f"\n  [bf16] {tag} vs bruteforce: min cos {cos:.5f}")
+        assert cos > 0.999

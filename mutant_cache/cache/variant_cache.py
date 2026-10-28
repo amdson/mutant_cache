@@ -38,6 +38,15 @@ anyway).
 Backends
 --------
 * `forward_variants`            — efficient: O(N·K·L) attention per layer.
+  Its cross branch has two implementations (``cross_impl``, default
+  `CROSS_ATTN_IMPL`): ``"flex"``, compiled `flex_attention` on the gathered
+  non-variant reference keys (fused, no (h, N·K, L) score matrix in memory,
+  QK/PV in the model dtype), and ``"reference"``, the plain fp32 matmul
+  version kept as its oracle. ``"auto"`` = flex on CUDA, reference otherwise.
+* `forward_variants_ragged`     — same semantics, but every variant has its own
+  positions (`RaggedVariants`: a flat (T,) list + offsets, no padding). One
+  flex call per layer over [reference keys | variant keys] with a per-row
+  block mask; a dense-mask version is its oracle.
 * `forward_variants_bruteforce` — oracle: ordinary full-sequence blocks on the
   (N, L) mutant sequences, with non-variant positions clamped back to the
   frozen reference after every block and an attention mask implementing the
@@ -62,10 +71,14 @@ from typing import Optional
 
 import torch
 import torch.nn.functional as F
+from torch.nn.attention.flex_attention import AuxRequest, create_block_mask, flex_attention
 
 from mutant_cache.backbone.esmc import ESMC, apply_rope
 
 _NEG = torch.finfo(torch.float32).min
+
+# Cross-attention backend for `forward_variants`: "auto" | "flex" | "reference".
+CROSS_ATTN_IMPL = "auto"
 
 
 # ---------------------------------------------------------------------------- #
@@ -318,12 +331,50 @@ def _cross_attention_with_lse(q, k, v, keep, scale):
     return out, lse.view(h, N, K, 1).transpose(0, 1)
 
 
+def _flex_cross_call(q, k, v, scale):
+    return flex_attention(q, k, v, scale=scale, return_aux=AuxRequest(lse=True))
+
+
+def _flex_ragged_call(q, k, v, block_mask, scale):
+    return flex_attention(q, k, v, block_mask=block_mask, scale=scale)
+
+
+_flex_compiled = {}
+
+
+def _flex(fn):
+    """Compiled ``fn`` (flex_attention is only fused when compiled). One
+    wrapper per call site: dynamo's recompile limit is per frame, and each
+    site has its own few shape regimes (query len 1 / <128 / >=128, fwd/bwd).
+    dynamic=True so N, K, L, T don't recompile within a regime."""
+    if fn not in _flex_compiled:
+        _flex_compiled[fn] = torch.compile(fn, dynamic=True)
+    return _flex_compiled[fn]
+
+
+def _cross_attention_flex(q, k, v, ref_idx, scale):
+    """Fused version of `_cross_attention_with_lse`, same folding and contract,
+    except ``ref_idx``: (L',) indices of the allowed reference keys (gathered,
+    so the kernel needs no mask). Scores are never materialized (recomputed in
+    backward), QK/PV run in q's dtype with an fp32 softmax, and the LSE is
+    differentiable, which the merge needs. Returns out (N, h, K, dh) in q's
+    dtype, lse (N, h, K, 1) fp32."""
+    N, h, K, dh = q.shape
+    qf = q.transpose(0, 1).reshape(1, h, N * K, dh)
+    k = k[:, :, ref_idx].to(q.dtype)
+    v = v[:, :, ref_idx].to(q.dtype)
+    out, aux = _flex(_flex_cross_call)(qf, k, v, scale)
+    out = out.reshape(h, N, K, dh).transpose(0, 1)
+    return out, aux.lse.reshape(h, N, K, 1).transpose(0, 1)
+
+
 # ---------------------------------------------------------------------------- #
 # Efficient variant forward                                                     #
 # ---------------------------------------------------------------------------- #
 def forward_variants(model: ESMC, ref: ReferenceStates, positions, variant_ids,
                      var_mask=None, output_logits: bool = True,
-                     output_layers: bool = False) -> VariantOutput:
+                     output_layers: bool = False,
+                     cross_impl: Optional[str] = None) -> VariantOutput:
     """N variants x K shared token positions against one frozen reference.
 
     positions: (K,) token indices into ``ref.ids`` (residue i, 1-based -> i).
@@ -331,6 +382,7 @@ def forward_variants(model: ESMC, ref: ReferenceStates, positions, variant_ids,
     var_mask: optional (N, K) bool, False = padded slot (see module docstring).
     Differentiable w.r.t. everything on the variant path (adapters, hooks,
     base weights as used by the variant stream); ``ref`` is treated as given.
+    cross_impl: "auto" | "flex" | "reference"; None = `CROSS_ATTN_IMPL`.
     """
     positions, variant_ids, var_mask = _prep(model, ref, positions, variant_ids, var_mask)
     N, K = variant_ids.shape
@@ -344,11 +396,20 @@ def forward_variants(model: ESMC, ref: ReferenceStates, positions, variant_ids,
     rowmask = None if var_mask is None else var_mask[..., None]
     sm = _slot_key_mask(model, var_mask, N, K, dev)
     sm4 = None if sm is None else sm[:, None]                  # (N|1, 1, K, K)
-    cross = not model.disable_cross_attention
+    impl = cross_impl or CROSS_ATTN_IMPL
+    if impl == "auto":
+        impl = "flex" if x.is_cuda else "reference"
+    if impl not in ("flex", "reference"):
+        raise ValueError(f"cross_impl {impl!r}")
+    # K == L leaves no reference keys; the reference impl gives them weight 0.
+    cross = not model.disable_cross_attention and K < L
     if cross:
         kv = reference_kv(model, ref)
         keep = torch.ones(L, dtype=torch.bool, device=dev)
         keep[positions] = False
+        if impl == "flex":
+            # Indices of the kept keys without a host sync (stable: kept first).
+            ref_idx = torch.argsort((~keep).to(torch.uint8), stable=True)[:L - K]
 
     layer_hidden = []
     for i, blk in enumerate(model.blocks):
@@ -362,7 +423,10 @@ def forward_variants(model: ESMC, ref: ReferenceStates, positions, variant_ids,
         out_s, lse_s = _self_attention_with_lse(q, k, v, sm4, scale)
         if cross:
             k_r, v_r = kv[i]
-            out_c, lse_c = _cross_attention_with_lse(q, k_r, v_r, keep, scale)
+            if impl == "flex":
+                out_c, lse_c = _cross_attention_flex(q, k_r, v_r, ref_idx, scale)
+            else:
+                out_c, lse_c = _cross_attention_with_lse(q, k_r, v_r, keep, scale)
             lse = torch.logaddexp(lse_c, lse_s)
             o = torch.exp(lse_c - lse) * out_c + torch.exp(lse_s - lse) * out_s
         else:
@@ -379,6 +443,232 @@ def forward_variants(model: ESMC, ref: ReferenceStates, positions, variant_ids,
 
     hidden = model.transformer.norm(x)
     hidden = _clamp(hidden, ref.final, positions, var_mask)
+    logits = model.sequence_head(hidden) if output_logits else None
+    return VariantOutput(hidden=hidden, logits=logits,
+                         layer_hidden=layer_hidden if output_layers else None,
+                         hidden_prenorm=x)
+
+
+# ---------------------------------------------------------------------------- #
+# Ragged variant forward                                                        #
+# ---------------------------------------------------------------------------- #
+@dataclass
+class RaggedVariants:
+    """N variants as one flat list of their T real substitutions, grouped by
+    variant: variant n owns rows ``offsets[n]:offsets[n+1]``, each at its own
+    positions (unique within a variant). There is no padding, so no
+    ``var_mask``; a variant with no rows is the reference itself.
+
+    ``slots`` (T,) indexes ``model.variant_attn_mask`` (default: rank within
+    the variant). `ragged_from_padded` keeps the padded column index, so hooks
+    mean the same thing as in `forward_variants`.
+    """
+    positions: torch.Tensor              # (T,) token index into ref.ids
+    ids: torch.Tensor                    # (T,) token id
+    offsets: torch.Tensor                # (N+1,) long
+    slots: Optional[torch.Tensor] = None  # (T,) long
+
+    @property
+    def n_variants(self) -> int:
+        return self.offsets.shape[0] - 1
+
+    @property
+    def n_tokens(self) -> int:
+        return self.positions.shape[0]
+
+    def seg(self) -> torch.Tensor:
+        """(T,) variant index of every row."""
+        counts = self.offsets[1:] - self.offsets[:-1]
+        return torch.repeat_interleave(
+            torch.arange(self.n_variants, device=counts.device), counts,
+            output_size=self.n_tokens)
+
+    def to(self, device) -> "RaggedVariants":
+        return RaggedVariants(self.positions.to(device), self.ids.to(device),
+                              self.offsets.to(device),
+                              None if self.slots is None else self.slots.to(device))
+
+    def validate(self, seq_len: int) -> None:
+        """Host-side checks (sync); the forward does none."""
+        T, off = self.n_tokens, self.offsets
+        if self.ids.shape != (T,) or (self.slots is not None and self.slots.shape != (T,)):
+            raise ValueError("positions / ids / slots must all be (T,)")
+        if int(off[0]) != 0 or int(off[-1]) != T or bool((off[1:] < off[:-1]).any()):
+            raise ValueError("offsets must be non-decreasing from 0 to T")
+        if T and (int(self.positions.min()) < 0 or int(self.positions.max()) >= seq_len):
+            raise ValueError(f"positions out of range [0, {seq_len})")
+        key = self.seg() * seq_len + self.positions
+        if torch.unique(key).numel() != T:
+            raise ValueError("positions must be unique within a variant")
+
+
+def ragged_from_padded(positions, variant_ids, var_mask=None) -> RaggedVariants:
+    """Shared-position batch (as `forward_variants` takes it) -> ragged; rows
+    are the ``var_mask`` slots in (variant, slot) order. Row t of the ragged
+    output equals ``padded[var_mask][t]``."""
+    positions = torch.as_tensor(positions).long().reshape(-1)
+    variant_ids = torch.as_tensor(variant_ids).long()
+    if variant_ids.dim() == 1:
+        variant_ids = variant_ids[None]
+    N, K = variant_ids.shape
+    m = (torch.ones(N, K, dtype=torch.bool, device=variant_ids.device) if var_mask is None
+         else torch.as_tensor(var_mask, device=variant_ids.device).bool().reshape(N, K))
+    n, j = m.nonzero(as_tuple=True)
+    offsets = F.pad(m.sum(1).cumsum(0), (1, 0))
+    return RaggedVariants(positions.to(j.device)[j], variant_ids[n, j], offsets, slots=j)
+
+
+def ragged_from_lists(variants) -> RaggedVariants:
+    """``variants``: per variant, a list of (token position, token id)."""
+    pos = [p for v in variants for p, _ in v]
+    ids = [t for v in variants for _, t in v]
+    offsets = torch.tensor([0] + [len(v) for v in variants]).cumsum(0)
+    return RaggedVariants(torch.tensor(pos, dtype=torch.long),
+                          torch.tensor(ids, dtype=torch.long), offsets)
+
+
+def _ragged_mask_mod(seg, slot, is_mut, cross, sm):
+    """Key set of query row q over the concatenated axis
+    [L reference keys if ``cross`` | T variant keys]: reference key j unless
+    q's variant mutated position j; variant key r iff r is in q's variant (and
+    ``sm[variant, slot_q, slot_r]``). Works under flex and broadcast-dense.
+    Sizes are read off the captured tensors so compiled code stays dynamic."""
+    T = seg.shape[0]
+
+    def mask_mod(b, h, q, kv):
+        q = q.clamp(0, T - 1)
+        n = seg[q]
+        n_ref = is_mut.shape[1] if cross else 0
+        r = (kv - n_ref).clamp(0, T - 1)
+        same = seg[r] == n
+        if sm is not None:
+            same = same & sm[n.clamp(max=sm.shape[0] - 1), slot[q], slot[r]]
+        if not cross:
+            return same
+        ref_ok = ~is_mut[n, kv.clamp(0, n_ref - 1)]
+        return torch.where(kv < n_ref, ref_ok, same)
+
+    return mask_mod
+
+
+def _ragged_block_mask_call(seg, slot, is_mut, cross, sm):
+    T = seg.shape[0]
+    S = T + (is_mut.shape[1] if cross else 0)
+    return create_block_mask(_ragged_mask_mod(seg, slot, is_mut, cross, sm),
+                             None, None, T, S, device=seg.device)
+
+
+def _ragged_attention_dense(q, k, v, mask_mod, scale):
+    """Oracle for the flex call: explicit (T, n_ref + T) mask, fp32 softmax.
+    q (1, h, T, dh), k/v (1, h, S, dh) -> (1, h, T, dh) in q's dtype."""
+    T, S = q.shape[-2], k.shape[-2]
+    dev = q.device
+    mask = mask_mod(None, None, torch.arange(T, device=dev)[:, None],
+                    torch.arange(S, device=dev)[None, :])
+    s = torch.matmul(q.float(), k.float().transpose(-1, -2)) * scale
+    s = s.masked_fill(~mask, _NEG)
+    return torch.matmul(torch.softmax(s, -1), v.float()).to(q.dtype)
+
+
+def forward_variants_ragged(model: ESMC, ref: ReferenceStates, rv: RaggedVariants,
+                            output_logits: bool = True, output_layers: bool = False,
+                            attn_impl: Optional[str] = None) -> VariantOutput:
+    """`forward_variants` for variants that each have their own positions.
+
+    Every row is a real substitution, so the residual stream is (T, d) and
+    nothing is padded or clamped. Attention is one softmax per query over the
+    concatenation [reference keys (batch 1) | all T variant keys] with a
+    per-row mask (`_ragged_mask_mod`); that is exactly the key set of
+    `forward_variants`, so no LSE merge is needed. The block mask is the same
+    in every layer and is built once per call.
+
+    Outputs are per row: ``hidden`` / ``logits`` / ``layer_hidden`` are
+    (T, ...), aligned with ``rv``. ``attn_impl``: "flex" | "reference" (dense,
+    O(T·(L+T)) memory, for tests) | "auto"; None = `CROSS_ATTN_IMPL`.
+    Hooks: ``variant_extra_embed``, ``variant_attn_mask`` (indexed by
+    ``rv.slots``; (S, S) or (N, S, S)), ``disable_cross_attention``, adapters.
+    """
+    dev = model.device
+    rv = rv.to(dev)
+    T, N, L = rv.n_tokens, rv.n_variants, ref.seq_len
+    d, h, dh = model.d_model, model.n_heads, model.head_dim
+    scale = dh ** -0.5
+    pos = rv.positions.long()
+    seg = rv.seg()
+    slot = (rv.slots.long() if rv.slots is not None
+            else torch.arange(T, device=dev) - rv.offsets[seg])
+
+    impl = attn_impl or CROSS_ATTN_IMPL
+    if impl == "auto":
+        impl = "flex" if pos.is_cuda else "reference"
+    if impl not in ("flex", "reference"):
+        raise ValueError(f"attn_impl {impl!r}")
+
+    ids = rv.ids.long()
+    if T == 0:
+        empty = model.embed(ids)
+        return VariantOutput(hidden=empty,
+                             logits=model.sequence_head(empty) if output_logits else None,
+                             layer_hidden=[empty] * model.n_layers if output_layers else None,
+                             hidden_prenorm=empty)
+    x = model.embed(ids)[None]                                 # (1, T, d)
+    if model.variant_extra_embed is not None:
+        x = x + model.variant_extra_embed(x)                   # hook sees real rows only
+    T_out = T
+    if impl == "flex":
+        # Pad to a multiple of the flex block with dummy rows in their own
+        # variant N (sees the reference and itself; dropped at the end): keeps
+        # every call in one compiled shape regime.
+        pad = -T % 128
+        z = torch.zeros(pad, dtype=torch.long, device=dev)
+        x = torch.cat([x, model.embed(z + ref.ids[0])[None].to(x.dtype)], dim=1)
+        pos, slot, seg = torch.cat([pos, z]), torch.cat([slot, z]), torch.cat([seg, z + N])
+        T = T + pad
+    cos, sin = model.rope(pos, x.dtype)
+
+    sm = model.variant_attn_mask
+    if sm is not None:
+        sm = torch.as_tensor(sm, device=dev).bool()
+        if sm.dim() == 2:
+            sm = sm[None]
+    cross = not model.disable_cross_attention
+    is_mut = torch.zeros(N + 1, L, dtype=torch.bool, device=dev)   # row N: dummies
+    is_mut[seg, pos] = True
+    is_mut[N] = False
+    if impl == "flex":
+        # Built once, shared by every layer; compiled so the (T, L+T) mask is
+        # never materialized.
+        with torch.no_grad():
+            block_mask = _flex(_ragged_block_mask_call)(seg, slot, is_mut, cross, sm)
+    else:
+        mask_mod = _ragged_mask_mod(seg, slot, is_mut, cross, sm)
+    kv = reference_kv(model, ref) if cross else None
+
+    layer_hidden = []
+    for i, blk in enumerate(model.blocks):
+        ad = _adapter(model, i)
+        attn = blk.attn
+        q, k, v = _qkv(attn, x, ad, None, d)
+        q = apply_rope(q.view(1, T, h, dh), cos, sin).transpose(1, 2)
+        k = apply_rope(k.view(1, T, h, dh), cos, sin).transpose(1, 2)
+        v = v.view(1, T, h, dh).transpose(1, 2)
+        if cross:
+            k_r, v_r = kv[i]
+            k = torch.cat([k_r.to(k.dtype), k], dim=2)
+            v = torch.cat([v_r.to(v.dtype), v], dim=2)
+        if impl == "flex":
+            o = _flex(_flex_ragged_call)(q, k, v, block_mask, scale)
+        else:
+            o = _ragged_attention_dense(q, k, v, mask_mod, scale)
+        o = o.transpose(1, 2).reshape(1, T, d)
+        o = _add(attn.out_proj(o), _delta(ad, "o", o, None))
+        x = x + o / blk.scaling_factor
+        x = x + _ffn(blk, x, ad, None) / blk.scaling_factor
+        if output_layers:
+            layer_hidden.append(x[0, :T_out])
+
+    x = x[0, :T_out]
+    hidden = model.transformer.norm(x)
     logits = model.sequence_head(hidden) if output_logits else None
     return VariantOutput(hidden=hidden, logits=logits,
                          layer_hidden=layer_hidden if output_layers else None,
@@ -456,3 +746,75 @@ def forward_variants_bruteforce(model: ESMC, ref: ReferenceStates, positions,
     return VariantOutput(hidden=hidden, logits=logits,
                          layer_hidden=layer_hidden if output_layers else None,
                          hidden_prenorm=x)
+
+
+# ---------------------------------------------------------------------------- #
+# Exact full forward (no approximation)                                         #
+# ---------------------------------------------------------------------------- #
+def forward_variants_exact(model: ESMC, ref: ReferenceStates, positions, variant_ids,
+                           var_mask=None, output_logits: bool = True,
+                           output_layers: bool = False,
+                           max_tokens: int = 65536) -> VariantOutput:
+    """The full forward of every mutant sequence: what the cache approximates.
+
+    Same signature, hooks and outputs as `forward_variants_bruteforce`, minus
+    the clamp: every position is recomputed every layer, so wild-type tokens
+    *do* see the variants. Hooks act on the variant rows exactly as in the
+    oracle (extra embed and variant adapters on real slots; ``variant_attn_mask``
+    / ``disable_cross_attention`` restrict only what variant rows attend to;
+    non-variant rows attend to everything). Padded slots are ordinary
+    reference-token positions here. Without hooks or variant adapters this is
+    ``model(mutant_ids)`` read at ``positions``.
+
+    The embedding (and so ``variant_extra_embed``) runs once on the whole
+    batch; the blocks run in chunks of N so at most ``max_tokens`` = N_chunk·L
+    tokens are live.
+    """
+    positions, variant_ids, var_mask = _prep(model, ref, positions, variant_ids, var_mask)
+    N, K = variant_ids.shape
+    L = ref.seq_len
+    dev = model.device
+    x = _embed_variants(model, ref, positions, variant_ids, var_mask)
+    cos, sin = model.rope(torch.arange(L, device=dev), x.dtype)
+    sm = _slot_key_mask(model, var_mask, N, K, dev)            # (N|1, K, K) or None
+    chunk = max(1, max_tokens // L)
+    outs = [_exact_blocks(model, ref, positions, x[s:s + chunk],
+                          None if var_mask is None else var_mask[s:s + chunk],
+                          None if sm is None else (sm if sm.shape[0] == 1 else sm[s:s + chunk]),
+                          cos, sin, output_layers)
+            for s in range(0, N, chunk)]
+    x = torch.cat([o[0] for o in outs])
+    layer_hidden = ([torch.cat(ls) for ls in zip(*[o[1] for o in outs])]
+                    if output_layers else None)
+    hidden = model.transformer.norm(x)
+    logits = model.sequence_head(hidden) if output_logits else None
+    return VariantOutput(hidden=hidden, logits=logits, layer_hidden=layer_hidden,
+                         hidden_prenorm=x)
+
+
+def _exact_blocks(model, ref, positions, x, var_mask, sm, cos, sin, output_layers):
+    """Full-length blocks for one chunk of variants; x (n, K, d) embedded."""
+    n, K = x.shape[:2]
+    L = ref.seq_len
+    dev = x.device
+    # Variant rows' key sets as in the oracle; None when unrestricted.
+    mask = None
+    if sm is not None or model.disable_cross_attention:
+        allowed = torch.full((n, K, L), not model.disable_cross_attention,
+                             dtype=torch.bool, device=dev)
+        allowed[:, :, positions] = (sm.expand(n, K, K) if sm is not None
+                                    else torch.ones(n, K, K, dtype=torch.bool, device=dev))
+        mask = torch.ones(n, 1, L, L, dtype=torch.bool, device=dev)
+        mask[:, 0, positions, :] = allowed
+
+    rows = torch.zeros(n, L, 1, dtype=torch.bool, device=dev)
+    rows[:, positions, 0] = True if var_mask is None else var_mask
+    full = ref.layer_inputs[0].to(x.dtype).expand(n, L, model.d_model).clone()
+    full[:, positions] = x
+    layer_hidden = []
+    for i, blk in enumerate(model.blocks):
+        full = _full_block(model, blk, full, cos, sin, mask, _adapter(model, i), rows)
+        if output_layers:
+            layer_hidden.append(full[:, positions])
+
+    return full[:, positions], layer_hidden

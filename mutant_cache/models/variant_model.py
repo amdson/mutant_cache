@@ -59,7 +59,11 @@ import torch.nn as nn
 from mutant_cache.models.data_compat import parse_mutant
 
 ABLATIONS = ("none", "additive", "no_cross_attn", "random_ref", "position_only")
-BACKENDS = ("cache", "recompute")
+# cache: the sparse variant cache (ragged when the backbone has it).
+# recompute: its bruteforce oracle — the SAME approximation on full-length
+#   blocks, so it checks numerics, not the approximation.
+# exact: a full forward of every mutant sequence — what the cache approximates.
+BACKENDS = ("cache", "recompute", "exact")
 
 
 # ── config ───────────────────────────────────────────────────────────────────
@@ -75,7 +79,8 @@ class VariantModelConfig:
     vocab_size: int = 0                 # filled from the backbone if 0
 
     ablation: str = "none"
-    backend: str = "cache"              # "cache" | "recompute" (same weights)
+    backend: str = "cache"              # see BACKENDS (same weights on every one)
+    ragged: bool = True                 # cache backend: per-variant positions, no union padding
 
     # token composition
     use_position_embedding: bool = True
@@ -334,7 +339,8 @@ class VariantPrediction:
     additive: torch.Tensor              # (N,)
     interaction: torch.Tensor           # (N,)
     token_score: torch.Tensor           # (N, K)
-    hidden: torch.Tensor                # (N, K, d)
+    hidden: torch.Tensor                # (N, K, d); ragged cache path: (T, d), one
+                                        # row per var_mask.nonzero() entry
 
 
 def _mlp(d_in, d_hidden, n_layers, d_out, dropout):
@@ -391,6 +397,8 @@ class VariantEffectModel(nn.Module):
         self._random_ref_cache: dict = {}
         self._ref_cache: dict = {}
         self._var_mask_ok = self._backbone_takes_var_mask()
+        self._ragged_ok = (self._var_mask_ok
+                           and hasattr(backbone, "forward_variants_ragged"))
 
     def _backbone_takes_var_mask(self) -> bool:
         """Does ``forward_variants`` accept ``var_mask=``?
@@ -594,10 +602,59 @@ class VariantEffectModel(nn.Module):
             bb.variant_extra_embed = hook
             bb.variant_attn_mask = attn_mask
             bb.disable_cross_attention = not self.cfg.cross_attention
-            fn = (bb.forward_variants if backend == "cache"
-                  else bb.forward_variants_bruteforce)
+            name = {"cache": "forward_variants",
+                    "recompute": "forward_variants_bruteforce",
+                    "exact": "forward_variants_exact"}[backend]
+            if not hasattr(bb, name):
+                raise ValueError(f"backend {backend!r} needs backbone.{name}")
+            fn = getattr(bb, name)
             return (fn(ref, positions, var_ids, var_mask=var_mask)
                     if self._var_mask_ok else fn(ref, positions, var_ids))
+        finally:
+            (bb.variant_extra_embed, bb.variant_attn_mask,
+             bb.disable_cross_attention) = saved
+
+    # -- ragged cache path ----------------------------------------------------
+    def _use_ragged(self, backend: str) -> bool:
+        return self.cfg.ragged and backend == "cache" and self._ragged_ok
+
+    def _extra_embed_rows(self, batch: VariantBatch, rows, slots, var_ids):
+        """`_extra_embed` for ragged rows: the same per-slot deltas, gathered
+        at (variant ``rows``, slot ``slots``) instead of built as (N, K, d)."""
+        cfg = self.cfg
+        positions = batch.positions[slots].clamp(max=cfg.max_position + 1)
+        ref_at = batch.ref_ids.to(batch.positions.device)[batch.positions[slots]]
+        alt = var_ids[rows, slots]
+        assay = batch.assay_ids[rows]
+
+        def hook(emb: torch.Tensor) -> torch.Tensor:          # (1, T, d)
+            d = torch.zeros_like(emb)
+            if cfg.use_position_embedding:
+                d = d + self.pos_embed(positions)[None].to(d.dtype)
+            if cfg.use_alt_residue and not cfg.position_only:
+                d = d + self.alt_embed(alt)[None].to(d.dtype)
+            if cfg.use_ref_residue:
+                d = d + self.ref_embed(ref_at)[None].to(d.dtype)
+            if cfg.assay_in_token:
+                d = d + self.assay_embed(assay)[None].to(d.dtype)
+            d = d * self.extra_gain
+            return d if cfg.extra_embed_returns_delta else emb + d
+
+        return hook
+
+    def _ragged_forward(self, batch, ref, var_ids, rows, slots, offsets, attn_mask):
+        """Backbone over the real substitutions only -> hidden (T, d)."""
+        from mutant_cache.cache.variant_cache import RaggedVariants
+        bb = self.backbone
+        rv = RaggedVariants(batch.positions[slots], var_ids[rows, slots], offsets,
+                            slots=slots)
+        saved = (bb.variant_extra_embed, bb.variant_attn_mask,
+                 bb.disable_cross_attention)
+        try:
+            bb.variant_extra_embed = self._extra_embed_rows(batch, rows, slots, var_ids)
+            bb.variant_attn_mask = attn_mask
+            bb.disable_cross_attention = not self.cfg.cross_attention
+            return bb.forward_variants_ragged(ref, rv).hidden
         finally:
             (bb.variant_extra_embed, bb.variant_attn_mask,
              bb.disable_cross_attention) = saved
@@ -631,13 +688,24 @@ class VariantEffectModel(nn.Module):
         dev = batch.variant_ids.device
         nz = batch.var_mask.nonzero(as_tuple=False)          # (M, 2) -> (row, slot)
         m = int(nz.shape[0])
-        h = torch.zeros(n, kk, self.cfg.d_model, device=dev,
-                        dtype=self.additive_proj.weight.dtype)
+        rows, slots = nz[:, 0], nz[:, 1]
+        dt = self.additive_proj.weight.dtype
+        if self._use_ragged(backend):
+            # One ragged variant per substitution: the reference plus that
+            # token. Hidden stays per row (M, d); nothing (N, K, d) is built.
+            token_score = torch.zeros(n, kk, device=dev, dtype=dt)
+            if m == 0:
+                return torch.zeros(0, self.cfg.d_model, device=dev, dtype=dt), token_score
+            hm = self._ragged_forward(batch, ref, var_ids, rows, slots,
+                                      torch.arange(m + 1, device=dev), None).to(dt)
+            s = self.additive_proj(hm).squeeze(-1)
+            return hm, token_score.index_put((rows, slots), s)
+
+        h = torch.zeros(n, kk, self.cfg.d_model, device=dev, dtype=dt)
         token_score = torch.zeros(n, kk, device=dev, dtype=h.dtype)
         if m == 0:                                           # a wild-type-only batch
             return h, token_score
 
-        rows, slots = nz[:, 0], nz[:, 1]
         ar = torch.arange(m, device=dev)
         ref_at = batch.ref_ids.to(dev)[batch.positions]
         exp_ids = ref_at[None].expand(m, kk).clone()
@@ -667,8 +735,23 @@ class VariantEffectModel(nn.Module):
         var_ids = (self._position_only_ids(batch) if cfg.position_only
                    else batch.variant_ids)
 
+        pooled = None
         if self._decompose(cfg):
             h, token_score = self._forward_decomposed(batch, ref, var_ids, backend)
+        elif self._use_ragged(backend):
+            # Rows = real substitutions in (variant, slot) order. Padded slots
+            # never exist, so the head's padding mask is moot; the additive
+            # ablation still needs its identity mask (indexed by slot).
+            rows, slots = batch.var_mask.nonzero(as_tuple=True)
+            offsets = torch.nn.functional.pad(batch.var_mask.sum(1).cumsum(0), (1, 0))
+            am = None
+            if cfg.ablation == "additive":
+                am = torch.eye(batch.k, dtype=torch.bool, device=rows.device)
+            ht = self._ragged_forward(batch, ref, var_ids, rows, slots, offsets, am)
+            h = ht.to(self.additive_proj.weight.dtype)             # (T, d)
+            ts = self.additive_proj(h).squeeze(-1)                 # (T,)
+            token_score = ts.new_zeros(batch.n, batch.k).index_put((rows, slots), ts)
+            pooled = self._pool_rows(h, rows, batch.n)
         else:
             vout = self._backbone_forward(
                 ref, batch.positions, var_ids, batch.var_mask,
@@ -688,7 +771,7 @@ class VariantEffectModel(nn.Module):
                   if cfg.use_ref_summary
                   else h.new_zeros(batch.n, cfg.d_model))
             interaction = self.inter_mlp(torch.cat([
-                self._pool(h, mask), rs,
+                self._pool(h, mask) if pooled is None else pooled, rs,
                 self.assay_embed(batch.assay_ids).to(h.dtype)], -1)).squeeze(-1)
         else:
             interaction = torch.zeros_like(additive)
@@ -700,13 +783,30 @@ class VariantEffectModel(nn.Module):
                                  interaction=interaction, token_score=token_score,
                                  hidden=h)
 
+    def _pool_rows(self, h, rows, n):
+        """`_pool` over ragged rows: h (T, d), rows (T,) variant index -> (n, d)."""
+        idx = rows[:, None].expand_as(h)
+        if self.cfg.pool == "max":
+            init = h.new_full((n, h.shape[1]), torch.finfo(h.dtype).min)
+            out = init.scatter_reduce(0, idx, h, reduce="amax", include_self=True)
+            empty = torch.bincount(rows, minlength=n) == 0     # wild type: pool to 0
+            return out.masked_fill(empty[:, None], 0.0)
+        s = h.new_zeros(n, h.shape[1]).index_add(0, rows, h)
+        if self.cfg.pool == "sum":
+            return s
+        cnt = torch.bincount(rows, minlength=n).clamp_min(1).to(h.dtype)
+        return s / cnt[:, None]
+
     def _pool(self, h, mask):
         denom = mask.sum(-1, keepdim=True).clamp_min(1.0)
         if self.cfg.pool == "sum":
             return (h * mask[..., None]).sum(1)
         if self.cfg.pool == "max":
-            return (h.masked_fill(~mask.bool()[..., None],
-                                  torch.finfo(h.dtype).min)).max(1).values
+            # a wild-type row has no tokens: pool to 0 like mean/sum, not to
+            # finfo.min (which the MLP turns into NaN)
+            out = (h.masked_fill(~mask.bool()[..., None],
+                                 torch.finfo(h.dtype).min)).max(1).values
+            return out.masked_fill(~mask.bool().any(-1, keepdim=True), 0.0)
         return (h * mask[..., None]).sum(1) / denom
 
     @torch.no_grad()

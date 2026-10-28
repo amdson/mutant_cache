@@ -120,4 +120,20 @@ pinned-down semantics (`mutant_cache/backbone/esmc.py`, `mutant_cache/cache/`):
   it `ESMC.forward` takes the stock path (official-parity). The reference then depends on trainable
   weights: `VariantEffectModel` recomputes it with grad in train mode and drops its cache on every
   train/eval switch; `base_fingerprint` covers shared adapters.
-- The variant path computes attention scores/softmax in fp32 regardless of model dtype.
+- The variant path computes the softmax and its log-sum-exp in fp32 regardless of model dtype;
+  on CUDA the cross-attention QK/PV matmuls run in the model dtype through compiled
+  `flex_attention` (`cross_impl="flex"`; `"reference"` is the all-fp32 version, kept as its oracle).
+- **Ragged variants** (`forward_variants_ragged(ref, rv)`, `RaggedVariants`): each variant has
+  its own positions — a flat `(T,)` list of real substitutions (`positions`, `ids`) plus
+  `offsets (N+1,)`; no padding, no `var_mask`. Same semantics as `forward_variants` with
+  `var_mask` (a padded slot there == a position absent here), cost O(T·L) instead of
+  O(N·K_union·L). Outputs are per row: `hidden`/`logits` `(T, ·)`. `variant_extra_embed` is
+  called with `(1, T, d)`; `variant_attn_mask` is indexed by `rv.slots`.
+  `ragged_from_padded(positions, variant_ids, var_mask)` converts (row t == `padded[var_mask][t]`).
+  `VariantEffectModel` uses it for `backend="cache"` when available (`cfg.ragged`, harness
+  `--no-ragged` to opt out); batches stay padded `VariantBatch`es as index structures, the
+  backbone and head work on the T real rows.
+- **Exact backend** (`forward_variants_exact`, same signature as the bruteforce oracle): the full
+  forward of every mutant sequence, nothing clamped — what the cache approximates. Hooks act on
+  variant rows as in the oracle. `VariantEffectModel` backends: `cache` | `recompute` (the oracle:
+  same approximation, a numerics check) | `exact` (the PLAN.md 22 accuracy control).
