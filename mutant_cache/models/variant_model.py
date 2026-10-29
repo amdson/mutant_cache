@@ -115,9 +115,21 @@ class VariantModelConfig:
     extra_embed_returns_delta: bool = True
     pass_var_mask: str = "auto"         # auto | always | never
 
+    # the simplest model around the cache: mutated tokens through the cache,
+    # mean-pooled, one MLP (head_hidden/head_layers) -> scalar. No marginal
+    # prior, no added token embeddings, no reference summary, no assay terms.
+    minimal: bool = False
+
     def __post_init__(self):
         if self.ablation not in ABLATIONS:
             raise ValueError(f"ablation must be one of {ABLATIONS}")
+        if self.minimal:
+            if self.ablation != "none":
+                raise ValueError("minimal is the plain model; it takes no ablation")
+            self.use_marginals = False
+            self.use_position_embedding = self.use_alt_residue = False
+            self.use_ref_residue = self.assay_in_token = False
+            self.use_ref_summary = False
         if self.backend not in BACKENDS:
             raise ValueError(f"backend must be one of {BACKENDS}")
         if self.ablation == "additive":
@@ -392,6 +404,9 @@ class VariantEffectModel(nn.Module):
 
         self.assay_bias = nn.Embedding(cfg.n_assays, 1)
         self.assay_scale = nn.Embedding(cfg.n_assays, 1)
+        if cfg.minimal:
+            # default PyTorch init; nothing zero-initialised, nothing anchored
+            self.head_mlp = _mlp(d, cfg.head_hidden, cfg.head_layers, 1, cfg.dropout)
 
         self.reset_head()
         self._random_ref_cache: dict = {}
@@ -443,6 +458,8 @@ class VariantEffectModel(nn.Module):
             nn.init.zeros_(self.additive_proj.bias)
 
     def head_parameters(self):
+        if self.cfg.minimal:          # the other head modules exist but are unused
+            return list(self.head_mlp.parameters())
         bb = {id(p) for p in self.backbone.parameters()}
         return [p for p in self.parameters() if id(p) not in bb]
 
@@ -457,8 +474,8 @@ class VariantEffectModel(nn.Module):
         """
         if batch.ref is not None:
             return batch.ref
-        if self._shared_lora() and self.training:
-            # trainable shared adapters move the reference every step:
+        if self._reference_moves() and self.training:
+            # trainable shared adapters / base move the reference every step:
             # recompute it (with grad, so they learn through it), never cache
             return self.backbone.forward_reference(batch.ref_ids,
                                                    grad=torch.is_grad_enabled())
@@ -482,11 +499,23 @@ class VariantEffectModel(nn.Module):
     def _shared_lora(self) -> bool:
         return getattr(self.backbone, "shared_adapters", None) is not None
 
+    def _reference_moves(self) -> bool:
+        """True when training changes the reference states: shared adapters,
+        or a trainable base (--train-backbone). Variant adapters never touch
+        the reference stream, so they are excluded."""
+        if self._shared_lora():
+            return True
+        from mutant_cache.cache.lora import lora_parameters
+        variant = {id(p) for p in lora_parameters(self.backbone, "variant")} \
+            if getattr(self.backbone, "variant_adapters", None) is not None else set()
+        return any(p.requires_grad and id(p) not in variant
+                   for p in self.backbone.parameters())
+
     def train(self, mode: bool = True):
         # With shared adapters the cached references go stale whenever the
         # weights move. Every train <-> eval switch (i.e. around each
         # evaluation) drops them; within an eval pass the cache is valid.
-        if self._shared_lora():
+        if self._reference_moves():
             self.clear_reference_cache()
         return super().train(mode)
 
@@ -538,6 +567,8 @@ class VariantEffectModel(nn.Module):
     # -- hooks ----------------------------------------------------------------
     def _extra_embed(self, batch: VariantBatch, variant_ids=None, assay_ids=None):
         cfg = self.cfg
+        if not self._any_extra_embed():
+            return None
         positions = batch.positions.clamp(max=cfg.max_position + 1)
         ref_at = batch.ref_ids.to(batch.positions.device)[batch.positions]
         variant_ids = batch.variant_ids if variant_ids is None else variant_ids
@@ -615,6 +646,11 @@ class VariantEffectModel(nn.Module):
              bb.disable_cross_attention) = saved
 
     # -- ragged cache path ----------------------------------------------------
+    def _any_extra_embed(self) -> bool:
+        c = self.cfg
+        return (c.use_position_embedding or c.use_ref_residue or c.assay_in_token
+                or (c.use_alt_residue and not c.position_only))
+
     def _use_ragged(self, backend: str) -> bool:
         return self.cfg.ragged and backend == "cache" and self._ragged_ok
 
@@ -622,6 +658,8 @@ class VariantEffectModel(nn.Module):
         """`_extra_embed` for ragged rows: the same per-slot deltas, gathered
         at (variant ``rows``, slot ``slots``) instead of built as (N, K, d)."""
         cfg = self.cfg
+        if not self._any_extra_embed():
+            return None
         positions = batch.positions[slots].clamp(max=cfg.max_position + 1)
         ref_at = batch.ref_ids.to(batch.positions.device)[batch.positions[slots]]
         alt = var_ids[rows, slots]
@@ -761,6 +799,13 @@ class VariantEffectModel(nn.Module):
             token_score = self.additive_proj(h).squeeze(-1) * batch.var_mask.to(h.dtype)
 
         mask = batch.var_mask.to(h.dtype)
+        if cfg.minimal:
+            pred = self.head_mlp(self._pool(h, mask) if pooled is None
+                                 else pooled).squeeze(-1)
+            return VariantPrediction(pred=pred, additive=torch.zeros_like(pred),
+                                     interaction=pred,
+                                     token_score=torch.zeros_like(token_score),
+                                     hidden=h)
         additive = token_score.sum(-1)
         if cfg.use_marginals and batch.marginals is not None:
             additive = additive + self.marginal_weight * (

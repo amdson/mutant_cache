@@ -147,6 +147,10 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
                         "positions (cost = real substitutions)")
     g.add_argument("--ref-summary", choices=["mean", "attn"], default="mean",
                    help="PLAN.md's open question: mean-pool or learned query")
+    g.add_argument("--minimal", action="store_true",
+                   help="the plain model: cache -> mean-pool mutated tokens -> "
+                        "one MLP. Turns off the marginal prior, added token "
+                        "embeddings, reference summary and assay terms")
     g.add_argument("--pool", choices=["mean", "sum", "max"], default="mean")
     g.add_argument("--head-hidden", type=int, default=128)
     g.add_argument("--head-layers", type=int, default=2)
@@ -468,7 +472,7 @@ def build_config(args, backbone, n_assays: int) -> VariantModelConfig:
         learn_marginal_weight=not args.freeze_marginal_weight,
         zero_init_additive=not args.no_zero_init_additive,
         position_only_token=args.position_only_token,
-        random_ref_seed=args.random_ref_seed)
+        random_ref_seed=args.random_ref_seed, minimal=args.minimal)
 
 
 def build_loss(args) -> VariantLoss:
@@ -662,6 +666,8 @@ def run(args) -> dict:
                           ("cuda" if torch.cuda.is_available() else "cpu"))
     dtype = torch.bfloat16 if args.precision == "bf16" else torch.float32
 
+    if args.minimal:
+        args.no_marginals = True     # no prior: don't build or pass marginals
     frames = prepare_frames(args)
     tr, ev = frames["train"], frames["eval"]
     if not len(ev):
@@ -734,7 +740,7 @@ def run(args) -> dict:
     base = run_baselines(args, frames, backbone, llr, table)
 
     zs = evaluate(model, ev_batches, ev, args)
-    print(f"\n  at init (= masked-marginal additive prior): "
+    print(f"\n  at init ({'masked-marginal additive prior' if not args.no_marginals else 'untrained model'}): "
           f"{_fmt(zs['summary'])}")
     history.append({"tag": "init", "step": 0, **zs["summary"]})
 

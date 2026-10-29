@@ -192,14 +192,18 @@ class StubESMC(nn.Module):
         return BackboneOutput(logits=self.lm_head(hidden), hidden=hidden,
                               layer_inputs=layer_inputs + [x])
 
-    @torch.no_grad()
-    def forward_reference(self, ids, key: str | None = None) -> ReferenceStates:
-        out = self.forward(ids)
+    def forward_reference(self, ids, key: str | None = None,
+                          grad: bool = False) -> ReferenceStates:
+        # ``grad`` as in the real backbone: keep the graph when the base (or a
+        # shared adapter) is trainable, so the reference carries gradient
+        with (torch.enable_grad() if grad else torch.no_grad()):
+            out = self.forward(ids)
         # layer_inputs[-1] from forward() is the post-last-layer residual; §1's
         # list is the per-layer *inputs*, so keep n_layers of them and park the
         # trailing one as final_prenorm (what var_mask clamping needs).
-        li = [t.detach() for t in out.layer_inputs]
-        return ReferenceStates(layer_inputs=li[:-1], final=out.hidden.detach(),
+        det = (lambda t: t) if grad else (lambda t: t.detach())
+        li = [det(t) for t in out.layer_inputs]
+        return ReferenceStates(layer_inputs=li[:-1], final=det(out.hidden),
                                final_prenorm=li[-1],
                                ids=ids if ids.dim() == 1 else ids[0], key=key)
 
