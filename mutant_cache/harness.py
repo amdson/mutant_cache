@@ -52,7 +52,7 @@ from mutant_cache.eval import (
     ResultsTable, depth_spearman, depth_summary, epsilon_correlation,
 )
 from mutant_cache.models import (
-    ABLATIONS, BACKENDS, LOSSES, LossConfig, VariantEffectModel,
+    ABLATIONS, BACKENDS, HEADS, LOSSES, LossConfig, VariantEffectModel,
     VariantModelConfig, VariantLoss, build_variant_batches,
 )
 from mutant_cache.models.data_compat import apply_split, load_split, load_tables
@@ -76,7 +76,12 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
                         "everything and evaluate on it too, which is a "
                         "capacity probe and nothing else.")
     g.add_argument("--eval-split", choices=["val", "test"], default="val",
-                   help="tune on val, touch test once")
+                   help="tune on val, touch test once. A split without rows in "
+                        "this partition is an error, never a silent fallback")
+    g.add_argument("--eval-label", default=None,
+                   help="what the --eval-split partition IS, for the record and "
+                        "the prediction files (e.g. 'development' for a tuning "
+                        "holdout stored as 'test'). Default: --eval-split")
     g.add_argument("--score-sets", nargs="*", default=None,
                    help="restrict to these score_set_ids")
     g.add_argument("--max-n-mut", type=int, default=0,
@@ -123,6 +128,11 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
                    help="shared LoRA projections (default q o gate up down)")
     g.add_argument("--lora-lr", type=float, default=None,
                    help="learning rate for both adapter sets (default --lr)")
+    g.add_argument("--lora-compute", choices=["activation", "fp32"], default="activation",
+                   help="adapter arithmetic: 'activation' casts the fp32 adapter "
+                        "weights to the activation dtype (bf16 matmuls over a bf16 "
+                        "base; the historical behaviour); 'fp32' runs the delta in "
+                        "fp32 and casts it back where it is added. Same under fp32")
     g.add_argument("--stub-dim", type=int, default=32, help="--backbone stub only")
     g.add_argument("--stub-layers", type=int, default=2, help="--backbone stub only")
 
@@ -151,6 +161,15 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
                    help="the plain model: cache -> mean-pool mutated tokens -> "
                         "one MLP. Turns off the marginal prior, added token "
                         "embeddings, reference summary and assay terms")
+    g.add_argument("--head", choices=list(HEADS), default="mean",
+                   help="minimal-model readout (needs --minimal unless 'mean'): "
+                        "mean (original), mean_count, sum_mean_count, wt_relative "
+                        "(matched WT/mutant token projection), mut_proj (its "
+                        "mutation-only capacity control)")
+    g.add_argument("--token-proj-dim", type=int, default=128,
+                   help="--head wt_relative / mut_proj: token projection width")
+    g.add_argument("--residue-embed-dim", type=int, default=16,
+                   help="--head wt_relative / mut_proj: ref/alt residue embedding width")
     g.add_argument("--pool", choices=["mean", "sum", "max"], default="mean")
     g.add_argument("--head-hidden", type=int, default=128)
     g.add_argument("--head-layers", type=int, default=2)
@@ -179,7 +198,15 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
                    help=f"one of {LOSSES}, or a '+'-joined mix, e.g. rank+mse_rank")
     g.add_argument("--target-col", default="score_rank",
                    help="score_rank for cross-assay training (the link is "
-                        "absorbed); score for a single ΔG assay")
+                        "absorbed); score for a single ΔG assay. Note score_rank "
+                        "is normalized over the whole table, eval rows included: "
+                        "harmless for plain pairwise ordering (monotone), not for "
+                        "objectives that use target magnitudes")
+    g.add_argument("--target-transform", choices=["none", "train_rank"], default="none",
+                   help="train_rank: replace the target by its mid-rank within "
+                        "the TRAINING scores of its score set (eval rows mapped "
+                        "through the training ECDF), so magnitude-aware losses "
+                        "never see eval labels. Overrides --target-col")
     g.add_argument("--se-col", default="score_se")
     g.add_argument("--rank-weight", type=float, default=1.0)
     g.add_argument("--mse-weight", type=float, default=1.0)
@@ -217,6 +244,12 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
                    help="variants per forward at evaluation (0 = --batch-size). "
                         "Predictions do not depend on batch-mates, so this only "
                         "changes speed; with the ragged cache, large is cheap")
+    g.add_argument("--max-steps", type=int, default=0,
+                   help="train for exactly this many optimizer steps (0 = "
+                        "--epochs full epochs). Epochs are repeated as needed and "
+                        "the last one is cut; the LR schedule spans max-steps; "
+                        "evaluation happens every --eval-every steps and at the "
+                        "final step only (no extra epoch-end evaluations)")
     g.add_argument("--accum", type=int, default=1,
                    help="batches accumulated into one optimizer step")
     g.add_argument("--grad-clip", type=float, default=1.0, help="0 = off")
@@ -325,11 +358,20 @@ def write_run_record(args, run_dir: Path, metrics: dict, extra: dict) -> dict:
                              if k not in ("output", "out_root", "device",
                                           "save_model", "strict", "tag")}}
     sha, dirty = _git_sha()
+    diff_sha = None
+    if dirty:
+        try:
+            repo = Path(__file__).resolve().parents[1]
+            diff = subprocess.check_output(["git", "-C", str(repo), "diff", "HEAD"],
+                                           stderr=subprocess.DEVNULL)
+            diff_sha = hashlib.sha1(diff).hexdigest()[:12]
+        except Exception:
+            pass
     rec = {
         "run_id": hashlib.sha1(json.dumps(ident, sort_keys=True,
                                           default=str).encode()).hexdigest()[:10],
         "created_at": _dt.datetime.now().isoformat(timespec="seconds"),
-        "git_sha": sha, "git_dirty": dirty,
+        "git_sha": sha, "git_dirty": dirty, "git_diff_sha1": diff_sha,
         "dataset": args.dataset, "model": f"variant_cache_{args.ablation}",
         "backbone": args.backbone, "backend": args.backend,
         "loss": args.loss, "seed": args.seed,
@@ -393,7 +435,8 @@ def attach_lora(args, backbone) -> None:
 
     def cfg(r, targets):
         return LoRAConfig(r=r, alpha=args.lora_alpha or 2.0 * r,
-                          targets=tuple(targets or DEFAULT_TARGETS))
+                          targets=tuple(targets or DEFAULT_TARGETS),
+                          compute=args.lora_compute)
     freeze = not args.train_backbone
     if args.lora_r:
         attach_variant_lora(backbone, cfg(args.lora_r, args.lora_targets), freeze_base=freeze)
@@ -404,6 +447,20 @@ def attach_lora(args, backbone) -> None:
         ps = _adapter_parameters(backbone, which)
         if ps:
             print(f"  {which} LoRA: {sum(p.numel() for p in ps):,} params (fp32)")
+
+
+def lora_record(backbone) -> dict:
+    """Resolved adapter settings (targets after defaults, alpha, arithmetic)."""
+    out = {}
+    for which, attr in (("variant", "lora_config"), ("shared", "shared_lora_config")):
+        if getattr(backbone, f"{which}_adapters", None) is None:
+            continue
+        c = getattr(backbone, attr)
+        out[which] = {"r": c.r, "alpha": c.alpha, "scaling": c.scaling,
+                      "targets": list(c.targets), "compute": c.compute,
+                      "dtype": str(next(getattr(backbone, f"{which}_adapters")
+                                        .parameters()).dtype)}
+    return out
 
 
 def _adapter_parameters(backbone, which: str = "all") -> list:
@@ -435,9 +492,14 @@ def prepare_frames(args) -> dict:
         sp = load_split(d, args.split)
         train = apply_split(v, sp, "train")
         evl = apply_split(v, sp, args.eval_split)
-        if not len(evl):                      # e.g. a split with no val rows
-            evl = apply_split(v, sp, "test")
+        if not len(evl):
+            # never fall back to another partition: a missing val would make
+            # model selection silently run on test
+            raise SystemExit(f"split {args.split!r} has no {args.eval_split!r} rows "
+                             f"(after filtering); pass --eval-split explicitly")
         sel = apply_split(v, sp, "val") if args.select_on_val else None
+        if args.select_on_val and not len(sel):
+            raise SystemExit(f"--select-on-val: split {args.split!r} has no val rows")
     else:
         sel = None
         train = v.copy()
@@ -447,6 +509,12 @@ def prepare_frames(args) -> dict:
         train = train.sample(args.max_train_variants,
                              random_state=args.seed).reset_index(drop=True)
 
+    if getattr(args, "target_transform", "none") == "train_rank":
+        train, evl, sel = (None if f is None else f.reset_index(drop=True)
+                           for f in (train, evl, sel))
+        train, evl, sel = train_rank_transform(train, evl, sel)
+        args.target_col = "target_train_rank"
+
     sequences = {}
     if targets is not None:
         sequences = dict(zip(targets["target_id"], targets["sequence"]))
@@ -454,6 +522,110 @@ def prepare_frames(args) -> dict:
             "eval": evl.reset_index(drop=True), "sequences": sequences,
             "select": None if sel is None else sel.reset_index(drop=True),
             "score_sets": ss, "dir": d}
+
+
+def train_rank_transform(train, *others, score_col: str = "score",
+                         out_col: str = "target_train_rank"):
+    """Per score set, the mid-rank of each score among that set's TRAINING
+    scores, in (0, 1): train rows get their ordinary normalized rank, other
+    frames are mapped through the training ECDF (ties and out-of-range values
+    land on the nearest training rank). Nothing about eval labels enters."""
+    ref = {s: np.sort(g[score_col].to_numpy(dtype=float))
+           for s, g in train.groupby("score_set_id", observed=True)}
+
+    def apply(f):
+        if f is None:
+            return None
+        f = f.copy()
+        out = np.full(len(f), np.nan)
+        for s, idx in f.groupby("score_set_id", observed=True).indices.items():
+            r = ref.get(s)
+            if r is None or not len(r):
+                continue
+            x = f[score_col].to_numpy(dtype=float)[idx]
+            mid = 0.5 * (np.searchsorted(r, x, "left") + np.searchsorted(r, x, "right"))
+            out[idx] = np.clip(mid, 0.5, len(r) - 0.5) / len(r)
+        f[out_col] = out
+        return f
+
+    return (apply(train), *(apply(f) for f in others))
+
+
+def file_sha1(path) -> str | None:
+    p = Path(path)
+    if not p.is_file():
+        return None
+    h = hashlib.sha1()
+    with open(p, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()[:16]
+
+
+def protocol_record(args, frames) -> dict:
+    """What a result was computed on: split / data hashes and the actual
+    unique-genotype counts of every partition used."""
+    d = frames["dir"]
+    split_file = None
+    if args.split:
+        for c in (d / "splits" / f"{args.split}.parquet",
+                  scratch_root() / "processed" / "splits" / f"{args.split}.parquet"):
+            if c.is_file():
+                split_file = c
+                break
+
+    def uniq(f):
+        return None if f is None else int(f[["score_set_id", "mutant"]].drop_duplicates().shape[0])
+    return {"split": args.split, "split_file": None if split_file is None else str(split_file),
+            "split_sha1": None if split_file is None else file_sha1(split_file),
+            "variants_sha1": file_sha1(d / "variants.parquet"),
+            "eval_split": args.eval_split,
+            "eval_label": args.eval_label or args.eval_split,
+            "n_train_unique": uniq(frames["train"]), "n_eval_unique": uniq(frames["eval"]),
+            "n_val_unique": uniq(frames["select"]),
+            "target_col": args.target_col,
+            "target_transform": getattr(args, "target_transform", "none")}
+
+
+def build_param_groups(model, args) -> list[dict]:
+    """AdamW groups, each trainable parameter exactly once:
+    head (--lr), variant / shared adapters (--lora-lr, default --lr), and the
+    rest of the backbone (--backbone-lr) only with --train-backbone. Frozen
+    parameters (requires_grad False) are left out of every group."""
+    lora_lr = args.lora_lr if args.lora_lr is not None else args.lr
+    bb = model.backbone
+    var = _adapter_parameters(bb, "variant") if getattr(bb, "variant_adapters", None) is not None else []
+    sh = _adapter_parameters(bb, "shared") if getattr(bb, "shared_adapters", None) is not None else []
+    ad_ids = {id(p) for p in var + sh}
+    groups = [("head", model.head_parameters(), args.lr),
+              ("variant_lora", var, lora_lr), ("shared_lora", sh, lora_lr)]
+    if args.train_backbone:
+        groups.append(("backbone", [p for p in bb.parameters() if id(p) not in ad_ids],
+                       args.backbone_lr))
+    out, seen = [], set()
+    for name, ps, lr in groups:
+        ps = [p for p in ps if p.requires_grad]
+        dup = [p for p in ps if id(p) in seen]
+        if dup:
+            raise RuntimeError(f"parameter group {name!r} repeats {len(dup)} parameter(s)")
+        seen |= {id(p) for p in ps}
+        if ps:
+            out.append({"name": name, "params": ps, "lr": lr,
+                        "weight_decay": args.weight_decay})
+    # a trainable backbone parameter outside every group is a configuration
+    # error (e.g. an unfrozen base without --train-backbone). Head modules the
+    # chosen head does not use (legacy minimal) are deliberately not optimized.
+    missing = [n for n, p in bb.named_parameters() if p.requires_grad and id(p) not in seen]
+    if missing:
+        raise RuntimeError(f"trainable backbone parameters in no optimizer group: {missing[:5]}"
+                           f"{' ...' if len(missing) > 5 else ''}")
+    return out
+
+
+def describe_param_groups(groups) -> list[dict]:
+    return [{"name": g["name"], "lr": g["lr"], "weight_decay": g["weight_decay"],
+             "n_tensors": len(g["params"]), "n_params": sum(p.numel() for p in g["params"]),
+             "dtypes": sorted({str(p.dtype) for p in g["params"]})} for g in groups]
 
 
 def build_config(args, backbone, n_assays: int) -> VariantModelConfig:
@@ -472,7 +644,9 @@ def build_config(args, backbone, n_assays: int) -> VariantModelConfig:
         learn_marginal_weight=not args.freeze_marginal_weight,
         zero_init_additive=not args.no_zero_init_additive,
         position_only_token=args.position_only_token,
-        random_ref_seed=args.random_ref_seed, minimal=args.minimal)
+        random_ref_seed=args.random_ref_seed, minimal=args.minimal,
+        head=args.head, token_proj_dim=args.token_proj_dim,
+        residue_embed_dim=args.residue_embed_dim)
 
 
 def build_loss(args) -> VariantLoss:
@@ -660,10 +834,13 @@ def _apply_mutant(seq: str, mutant: str) -> str:
 # ── the run ───────────────────────────────────────────────────────────────────
 
 def run(args) -> dict:
+    t_run0 = time.perf_counter()
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     device = torch.device(args.device or
                           ("cuda" if torch.cuda.is_available() else "cpu"))
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
     dtype = torch.bfloat16 if args.precision == "bf16" else torch.float32
 
     if args.minimal:
@@ -729,9 +906,12 @@ def run(args) -> dict:
     model = VariantEffectModel(backbone, cfg).to(device)
     lossfn = build_loss(args)
     n_head = sum(p.numel() for p in model.head_parameters())
-    print(f"  ablation={cfg.ablation} backend={cfg.backend} "
+    print(f"  ablation={cfg.ablation} backend={cfg.backend} head={cfg.head} "
           f"interaction={cfg.interaction} cross_attn={cfg.cross_attention} "
           f"| head params {n_head:,}")
+    _sync()
+    t_prep = time.perf_counter() - t_run0
+    timing: dict = {}
 
     run_dir = resolve_output(args)
     table = ResultsTable(f"{args.dataset} — {args.ablation} / {args.backend}")
@@ -748,10 +928,14 @@ def run(args) -> dict:
                                                                float("nan")),
             "summary": zs["summary"]}
     final = zs
-    if args.epochs:
+    if args.epochs or args.max_steps:
         sel_arg = (sel_batches, sel) if args.select_on_val else None
         best, final = train(model, lossfn, tr_batches, ev_batches, ev, args,
-                            history, run_dir, select=sel_arg)
+                            history, run_dir, select=sel_arg, timing=timing)
+    sel_scored = None
+    if args.select_on_val:
+        # the selected checkpoint's predictions on the selection partition
+        sel_scored = score_frame(model, sel_batches, sel)
 
     if args.epsilon_depths:
         final.update(epsilon_eval(model, final, frames, args, seqs,
@@ -799,8 +983,13 @@ def run(args) -> dict:
     final["depth_table"].to_csv(run_dir / "depth_spearman.csv", index=False)
     if len(final.get("epsilon", [])):
         final["epsilon"].to_csv(run_dir / "epsilon.csv", index=False)
-    final["scored"][["score_set_id", "target_id", "mutant", "n_mut", "score",
-                     "pred"]].to_csv(run_dir / "predictions.csv", index=False)
+    label = args.eval_label or args.eval_split
+    pcols = ["score_set_id", "target_id", "mutant", "n_mut", "score", "pred"]
+    final["scored"][pcols].assign(split=label, seed=args.seed).to_csv(
+        run_dir / "predictions.csv", index=False)
+    if sel_scored is not None:
+        sel_scored[pcols].assign(split="val", seed=args.seed).to_csv(
+            run_dir / "predictions_val.csv", index=False)
     table.write(run_dir / "results")
     (run_dir / "metrics.jsonl").write_text(
         "\n".join(json.dumps(h, default=float) for h in history) + "\n")
@@ -808,7 +997,20 @@ def run(args) -> dict:
     metrics = {args.eval_split: {"mean": {**final["summary"],
                                           **{f"control_{k}": v
                                              for k, v in control.get("summary", {}).items()}}}}
+    _sync()
+    timing.update(prep_s=t_prep, cold_total_s=time.perf_counter() - t_run0)
+    memory = {"ref_cache_mb": model.reference_cache_nbytes() / 2 ** 20}
+    if device.type == "cuda":
+        memory.update(peak_allocated_gb=torch.cuda.max_memory_allocated(device) / 2 ** 30,
+                      peak_reserved_gb=torch.cuda.max_memory_reserved(device) / 2 ** 30,
+                      gpu=torch.cuda.get_device_name(device))
     extra = {"n_train": len(tr), "n_eval": len(ev),
+             "n_select": None if sel is None else len(sel),
+             "eval_label": label,
+             "protocol": protocol_record(args, frames),
+             "head": cfg.head, "active_head_params": n_head,
+             "lora": lora_record(backbone),
+             "timing": timing, "memory": memory,
              "n_score_sets": int(ev["score_set_id"].nunique()),
              "n_targets": len(used_targets),
              "mean_union_positions": float(np.mean([b.k for b in ev_batches])),
@@ -842,45 +1044,122 @@ def _depth_delta(a: pd.DataFrame, b: pd.DataFrame) -> dict:
     return {d: float(aa[d] - bb[d]) for d in aa.index if d in bb.index}
 
 
+class UpdateTracker:
+    """Per optimizer group: gradient norm (pre-clip), size of the last update,
+    and distance travelled from initialization (absolute and relative to the
+    initial norm). Snapshots live on the CPU so they do not inflate the GPU
+    peak-memory numbers the run reports."""
+
+    def __init__(self, groups):
+        self.groups = groups
+        self.init = {g["name"]: [p.detach().to("cpu", copy=True) for p in g["params"]]
+                     for g in groups}
+        self.init_norm = {k: _norm(v) for k, v in self.init.items()}
+        self.prev = None
+
+    def snapshot(self) -> None:
+        self.prev = {g["name"]: [p.detach().to("cpu", copy=True) for p in g["params"]]
+                     for g in self.groups}
+
+    def row(self) -> dict:
+        out = {}
+        for g in self.groups:
+            n = g["name"]
+            grads = [p.grad for p in g["params"] if p.grad is not None]
+            cur = [p.detach().cpu() for p in g["params"]]
+            out[f"grad_norm_{n}"] = _norm(grads) if grads else 0.0
+            dist = _norm([c - i for c, i in zip(cur, self.init[n])])
+            out[f"update_from_init_{n}"] = dist
+            out[f"rel_update_from_init_{n}"] = dist / max(self.init_norm[n], 1e-12)
+            if self.prev is not None:
+                out[f"last_step_update_{n}"] = _norm([c - q for c, q in zip(cur, self.prev[n])])
+        self.prev = None
+        return out
+
+
+def _norm(ts) -> float:
+    ts = list(ts)
+    if not ts:
+        return 0.0
+    return float(torch.linalg.vector_norm(
+        torch.stack([torch.linalg.vector_norm(t.float()) for t in ts])))
+
+
+def _sync():
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+
 def train(model, lossfn, tr_batches, ev_batches, ev, args, history, run_dir,
-          select=None):
+          select=None, timing=None):
     """``select=(batches, frame)``: per-epoch scoring and best-epoch selection
     use that partition (val) instead of the reported one, which is then
-    scored once at the end."""
+    scored once at the end.
+
+    With ``--max-steps`` the run is exactly that many optimizer steps
+    (epochs repeated, the last one cut), evaluated every ``--eval-every``
+    steps and at the final step. ``timing`` (a dict) receives wall times."""
+    timing = {} if timing is None else timing
     mon_batches, mon = select if select is not None else (ev_batches, ev)
     # val Spearman is NaN on METL's tiny val sets (2 rows at ds10), so
     # selection on val uses the loss, which is always defined
     crit = "val_loss" if select is not None else "spearman_depth_all"
-    head = model.head_parameters()
-    groups = [{"params": head, "lr": args.lr}]
-    adapters = _adapter_parameters(model.backbone)
-    if adapters:
-        groups.append({"params": adapters,
-                       "lr": args.lora_lr if args.lora_lr is not None else args.lr})
-    if args.train_backbone:
-        ids = {id(p) for p in adapters}
-        groups.append({"params": [p for p in model.backbone.parameters()
-                                  if id(p) not in ids],
-                       "lr": args.backbone_lr})
+    groups = build_param_groups(model, args)
     opt = torch.optim.AdamW(groups, weight_decay=args.weight_decay)
     base_lrs = [g["lr"] for g in opt.param_groups]
+    for d in describe_param_groups(opt.param_groups):
+        print(f"  optimizer group {d['name']}: {d['n_params']:,} params "
+              f"({d['n_tensors']} tensors, {'/'.join(d['dtypes'])}) lr {d['lr']:g}")
+    tracker = UpdateTracker(opt.param_groups)
     rng = np.random.default_rng(args.seed)
     accum = max(1, args.accum)
     steps_per_epoch = math.ceil(len(tr_batches) / accum)
-    total = max(1, args.epochs * steps_per_epoch)
+    if args.max_steps:
+        total = args.max_steps
+        n_epochs = math.ceil(total / steps_per_epoch)
+    else:
+        total = max(1, args.epochs * steps_per_epoch)
+        n_epochs = args.epochs
     warmup = min(args.warmup, max(0, total // 10))
-    print(f"\n  {len(tr_batches)} batches x {args.epochs} epochs -> {total} "
-          f"optimizer steps (accum {accum}, warmup {warmup})")
+    print(f"\n  {len(tr_batches)} batches x {n_epochs} epochs -> {total} "
+          f"optimizer steps (accum {accum}, warmup {warmup}"
+          f"{', max-steps' if args.max_steps else ''})")
+    timing.update(total_steps=total, steps_per_epoch=steps_per_epoch,
+                  n_epochs=n_epochs, warmup=warmup)
 
     best = {crit: float("inf") if crit == "val_loss" else -float("inf"),
             "step": 0, "summary": {}}
     best_state = None
     gstep = 0
-    for epoch in range(args.epochs):
+    t_train = t_eval = 0.0
+    seen = 0
+
+    def log_eval(tag, epoch_loss):
+        nonlocal best, best_state, t_eval
+        _sync()
+        t0 = time.perf_counter()
+        ev_out = evaluate(model, mon_batches, mon, args)
+        row = {"tag": tag, "step": gstep, "epoch": epoch,
+               "train_loss": epoch_loss, **ev_out["summary"]}
+        if select is not None:
+            row["val_loss"] = _eval_loss(model, lossfn, mon_batches)
+        row.update(tracker.row())
+        row["lr_scale"] = lr_scale(max(gstep - 1, 0), total, args.schedule, warmup)
+        history.append(row)
+        best, best_state = _maybe_best(model, best, best_state, row, crit)
+        _sync()
+        t_eval += time.perf_counter() - t0
+        return row, ev_out
+
+    for epoch in range(n_epochs):
         model.train()
         order = rng.permutation(len(tr_batches))
         run_loss, run_n = 0.0, 0
+        _sync()
+        t0 = time.perf_counter()
         for si, s in enumerate(range(0, len(order), accum)):
+            if gstep >= total:
+                break
             scale = lr_scale(gstep, total, args.schedule, warmup)
             for g, lr0 in zip(opt.param_groups, base_lrs):
                 g["lr"] = lr0 * scale
@@ -896,36 +1175,48 @@ def train(model, lossfn, tr_batches, ev_batches, ev, args, history, run_dir,
                 (l / len(group)).backward()
                 run_loss += float(l.detach())
                 run_n += 1
+                seen += b.n
+            log_now = ((args.eval_every and (gstep + 1) % args.eval_every == 0)
+                       or (args.max_steps and gstep + 1 == total))
+            if log_now:
+                tracker.snapshot()
             if args.grad_clip:
                 torch.nn.utils.clip_grad_norm_(
                     [p for g in opt.param_groups for p in g["params"]],
                     args.grad_clip)
             opt.step()
             gstep += 1
-            if args.eval_every and gstep % args.eval_every == 0:
-                ev_out = evaluate(model, mon_batches, mon, args)
-                row = {"tag": f"step {gstep}", "step": gstep,
-                       "train_loss": run_loss / max(run_n, 1), **ev_out["summary"]}
-                if select is not None:
-                    row["val_loss"] = _eval_loss(model, lossfn, mon_batches)
-                history.append(row)
-                best, best_state = _maybe_best(model, best, best_state, row, crit)
+            if log_now:
+                _sync()
+                t_train += time.perf_counter() - t0
+                row, ev_out = log_eval(f"step {gstep}", run_loss / max(run_n, 1))
                 print(f"    step {gstep}: loss {row['train_loss']:.4f}  "
-                      f"{_fmt(ev_out['summary'])}", flush=True)
+                      + (f"val_loss {row['val_loss']:.4f}  " if 'val_loss' in row else "")
+                      + f"{_fmt(ev_out['summary'])}", flush=True)
                 model.train()
-        ev_out = evaluate(model, mon_batches, mon, args)
-        row = {"tag": f"epoch {epoch}", "step": gstep,
-               "train_loss": run_loss / max(run_n, 1), **ev_out["summary"]}
-        if select is not None:
-            row["val_loss"] = _eval_loss(model, lossfn, mon_batches)
-        history.append(row)
-        best, best_state = _maybe_best(model, best, best_state, row, crit)
+                _sync()
+                t0 = time.perf_counter()
+        _sync()
+        t_train += time.perf_counter() - t0
+        if args.max_steps:
+            if gstep >= total:
+                break
+            continue
+        row, ev_out = log_eval(f"epoch {epoch}", run_loss / max(run_n, 1))
         print(f"  epoch {epoch}: loss {row['train_loss']:.4f}  "
               f"{_fmt(ev_out['summary'])}", flush=True)
 
+    timing.update(train_s=t_train, train_eval_s=t_eval, steps=gstep,
+                  train_variants_seen=seen,
+                  steady_train_variants_per_s=seen / t_train if t_train else float("nan"),
+                  optimizer_groups=describe_param_groups(opt.param_groups))
     if best_state is not None and not args.no_select_best:
         model.load_state_dict(best_state)
+    _sync()
+    t0 = time.perf_counter()
     final = evaluate(model, ev_batches, ev, args)
+    _sync()
+    timing["final_eval_s"] = time.perf_counter() - t0
     print(f"\n  best {crit}={best[crit]:.4f} at step {best['step']}")
     return best, final
 

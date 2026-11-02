@@ -78,6 +78,7 @@ ATTN_TARGETS = ("q", "k", "v", "o")
 MLP_TARGETS = ("gate", "up", "down")
 ALL_TARGETS = ATTN_TARGETS + MLP_TARGETS
 DEFAULT_TARGETS = ("q", "o", "gate", "up", "down")
+COMPUTE_MODES = ("activation", "fp32")
 
 
 @dataclass
@@ -86,9 +87,16 @@ class LoRAConfig:
     alpha: float = 32.0
     dropout: float = 0.0
     targets: tuple[str, ...] = DEFAULT_TARGETS
+    # "activation": cast A/B to the activation dtype (bf16 matmuls over a bf16
+    # base; the historical behaviour). "fp32": cast the activation up, both
+    # matmuls in fp32, delta cast back to the activation dtype where it is
+    # added. Identical under an fp32 base.
+    compute: str = "activation"
 
     def __post_init__(self):
         self.targets = tuple(self.targets)
+        if self.compute not in COMPUTE_MODES:
+            raise ValueError(f"LoRA compute must be one of {COMPUTE_MODES}, got {self.compute!r}")
         bad = [t for t in self.targets if t not in ALL_TARGETS]
         if bad:
             raise ValueError(f"unknown LoRA target(s) {bad}; pick from {ALL_TARGETS}")
@@ -101,19 +109,26 @@ class LoRAConfig:
 
 
 class LoRADelta(nn.Module):
-    """``B @ A @ x * (alpha/r)`` with fp32 parameters, cast to the activation
-    dtype at use (differentiable cast -> fp32 grads / optimizer state).
+    """``B @ A @ x * (alpha/r)`` with fp32 parameters. By default cast to the
+    activation dtype at use (differentiable cast -> fp32 grads / optimizer
+    state, but bf16 arithmetic over a bf16 base); ``cfg.compute="fp32"`` does
+    the arithmetic in fp32 and casts only the delta back.
     ``lora_B`` starts at zero, so a fresh adapter is exactly the base."""
 
     def __init__(self, in_features: int, out_features: int, cfg: LoRAConfig):
         super().__init__()
         self.scaling = cfg.scaling
+        self.compute = cfg.compute
         self.lora_A = nn.Parameter(torch.empty(cfg.r, in_features, dtype=torch.float32))
         self.lora_B = nn.Parameter(torch.zeros(out_features, cfg.r, dtype=torch.float32))
         nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
         self.dropout = nn.Dropout(cfg.dropout) if cfg.dropout > 0 else nn.Identity()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.compute == "fp32":
+            out = F.linear(F.linear(self.dropout(x.float()), self.lora_A),
+                           self.lora_B) * self.scaling
+            return out.to(x.dtype)
         return F.linear(F.linear(self.dropout(x), self.lora_A.to(x.dtype)),
                         self.lora_B.to(x.dtype)) * self.scaling
 

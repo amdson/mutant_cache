@@ -33,7 +33,7 @@ def data(tmp_path_factory):
 def test_harness_runs_end_to_end(data, tmp_path, precision):
     out = tmp_path / "run"
     rc = harness.main([
-        "--data-dir", str(data), "--dataset", "synth", "--split", "protein",
+        "--data-dir", str(data), "--dataset", "synth", "--split", "protein", "--eval-split", "test",
         "--backbone", "random:64:4:2", "--precision", precision, "--device", DEV,
         "--epochs", "2", "--batch-size", "16", "--baselines", "zero_shot",
         "--control-backend", "recompute",
@@ -65,7 +65,7 @@ def test_harness_trains_lora_adapters(data, tmp_path, lora):
     optimizes head_parameters() would silently never touch them. lora_B starts
     at zero: nonzero after training means the optimizer updated it."""
     args = harness.build_parser().parse_args([
-        "--data-dir", str(data), "--dataset", "synth", "--split", "protein",
+        "--data-dir", str(data), "--dataset", "synth", "--split", "protein", "--eval-split", "test",
         "--backbone", "random:64:4:2", "--device", DEV, "--epochs", "1",
         "--batch-size", "16", "--baselines", "none", *lora,
         "--output", str(tmp_path / "run"), "--out-root", str(tmp_path)])
@@ -102,7 +102,7 @@ def test_load_split_falls_back_to_shared_splits_dir(tmp_path, monkeypatch):
 def test_harness_exact_control_and_eval_batch_size(data, tmp_path):
     out = tmp_path / "run_exact"
     rc = harness.main([
-        "--data-dir", str(data), "--dataset", "synth", "--split", "protein",
+        "--data-dir", str(data), "--dataset", "synth", "--split", "protein", "--eval-split", "test",
         "--backbone", "random:64:4:2", "--precision", "fp32", "--device", DEV,
         "--epochs", "1", "--batch-size", "16", "--eval-batch-size", "256",
         "--baselines", "none", "--control-backend", "exact",

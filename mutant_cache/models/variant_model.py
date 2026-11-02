@@ -64,6 +64,17 @@ ABLATIONS = ("none", "additive", "no_cross_attn", "random_ref", "position_only")
 #   blocks, so it checks numerics, not the approximation.
 # exact: a full forward of every mutant sequence — what the cache approximates.
 BACKENDS = ("cache", "recompute", "exact")
+# Readouts of the minimal model (cfg.head; k = number of real substitutions):
+#   mean            mean-pooled mutant states -> MLP (the original minimal head)
+#   mean_count      [mean, log1p(k)] -> MLP
+#   sum_mean_count  [sum, mean, log1p(k)] -> MLP
+#   wt_relative     z_i = phi([h_mut_i, h_wt_i, h_mut_i - h_wt_i, e_ref_i, e_alt_i]),
+#                   [sum z, mean z, log1p(k)] -> MLP; h_wt = final normed reference
+#                   state at the same token position
+#   mut_proj        wt_relative without the WT states: phi([h_mut_i, e_ref_i, e_alt_i])
+#                   (the capacity control for wt_relative)
+HEADS = ("mean", "mean_count", "sum_mean_count", "wt_relative", "mut_proj")
+N_RESIDUE_CLASSES = 21                  # 20 canonical residues + "other"
 
 
 # ── config ───────────────────────────────────────────────────────────────────
@@ -119,8 +130,19 @@ class VariantModelConfig:
     # mean-pooled, one MLP (head_hidden/head_layers) -> scalar. No marginal
     # prior, no added token embeddings, no reference summary, no assay terms.
     minimal: bool = False
+    # minimal readout (see HEADS); anything but "mean" requires minimal=True
+    head: str = "mean"
+    token_proj_dim: int = 128           # wt_relative / mut_proj: width of phi
+    residue_embed_dim: int = 16         # wt_relative / mut_proj: e_ref / e_alt width
 
     def __post_init__(self):
+        if self.head not in HEADS:
+            raise ValueError(f"head must be one of {HEADS}")
+        if self.head != "mean":
+            if not self.minimal:
+                raise ValueError(f"head={self.head!r} is a minimal-model readout; set minimal=True")
+            if self.pool != "mean":
+                raise ValueError(f"head={self.head!r} defines its own pooling; leave pool='mean'")
         if self.ablation not in ABLATIONS:
             raise ValueError(f"ablation must be one of {ABLATIONS}")
         if self.minimal:
@@ -386,6 +408,14 @@ class VariantEffectModel(nn.Module):
                                           getattr(backbone, "n_vocab", 64)))
         cfg.d_model, cfg.vocab_size = d, v
         self.cfg = cfg
+        self._random_ref_cache: dict = {}
+        self._ref_cache: dict = {}
+        self._var_mask_ok = self._backbone_takes_var_mask()
+        self._ragged_ok = (self._var_mask_ok
+                           and hasattr(backbone, "forward_variants_ragged"))
+        if self._new_head():
+            self._build_readout(backbone, d)
+            return
 
         self.pos_embed = nn.Embedding(cfg.max_position + 2, d)
         self.alt_embed = nn.Embedding(v, d)
@@ -409,11 +439,32 @@ class VariantEffectModel(nn.Module):
             self.head_mlp = _mlp(d, cfg.head_hidden, cfg.head_layers, 1, cfg.dropout)
 
         self.reset_head()
-        self._random_ref_cache: dict = {}
-        self._ref_cache: dict = {}
-        self._var_mask_ok = self._backbone_takes_var_mask()
-        self._ragged_ok = (self._var_mask_ok
-                           and hasattr(backbone, "forward_variants_ragged"))
+
+    def _new_head(self) -> bool:
+        return self.cfg.minimal and self.cfg.head != "mean"
+
+    def _build_readout(self, backbone, d: int) -> None:
+        """Only the modules the chosen readout uses (none of the legacy head
+        modules: no prior, assay terms, extra embeddings or reference summary).
+        Default PyTorch init, as for the original minimal head."""
+        cfg = self.cfg
+        w, e = cfg.token_proj_dim, cfg.residue_embed_dim
+        if cfg.head in ("wt_relative", "mut_proj"):
+            # token id -> residue class (0..19 canonical, 20 = anything else)
+            idx = torch.full((cfg.vocab_size,), N_RESIDUE_CLASSES - 1, dtype=torch.long)
+            for i, aa in enumerate("ACDEFGHIKLMNPQRSTVWY"):
+                if aa in backbone.aa_to_id:
+                    idx[int(backbone.aa_to_id[aa])] = i
+            self.register_buffer("_residue_index", idx, persistent=False)
+            self.residue_embed = nn.Embedding(N_RESIDUE_CLASSES, e)
+            d_tok = (3 * d if cfg.head == "wt_relative" else d) + 2 * e
+            self.token_proj = nn.Sequential(nn.Linear(d_tok, w), nn.GELU())
+            d_in = 2 * w + 1
+        elif cfg.head == "mean_count":
+            d_in = d + 1
+        else:                                   # sum_mean_count
+            d_in = 2 * d + 1
+        self.head_mlp = _mlp(d_in, cfg.head_hidden, cfg.head_layers, 1, cfg.dropout)
 
     def _backbone_takes_var_mask(self) -> bool:
         """Does ``forward_variants`` accept ``var_mask=``?
@@ -439,6 +490,8 @@ class VariantEffectModel(nn.Module):
 
     # -- initialisation -------------------------------------------------------
     def reset_head(self) -> None:
+        if self._new_head():
+            return
         nn.init.zeros_(self.assay_bias.weight)
         nn.init.ones_(self.assay_scale.weight)
         if self.cfg.zero_init_additive:
@@ -458,6 +511,9 @@ class VariantEffectModel(nn.Module):
             nn.init.zeros_(self.additive_proj.bias)
 
     def head_parameters(self):
+        if self._new_head():          # only the active readout modules exist
+            bb = {id(p) for p in self.backbone.parameters()}
+            return [p for p in self.parameters() if id(p) not in bb]
         if self.cfg.minimal:          # the other head modules exist but are unused
             return list(self.head_mlp.parameters())
         bb = {id(p) for p in self.backbone.parameters()}
@@ -495,6 +551,15 @@ class VariantEffectModel(nn.Module):
     def clear_reference_cache(self) -> None:
         self._ref_cache.clear()
         self._random_ref_cache.clear()
+
+    def reference_cache_nbytes(self) -> int:
+        return sum(r.nbytes() for r in self._ref_cache.values() if hasattr(r, "nbytes"))
+
+    def load_state_dict(self, state_dict, strict: bool = True, assign: bool = False):
+        # restoring a checkpoint can move the base / shared adapters: never
+        # score against references computed with the weights it replaced
+        self.clear_reference_cache()
+        return super().load_state_dict(state_dict, strict=strict, assign=assign)
 
     def _shared_lora(self) -> bool:
         return getattr(self.backbone, "shared_adapters", None) is not None
@@ -772,6 +837,8 @@ class VariantEffectModel(nn.Module):
 
         var_ids = (self._position_only_ids(batch) if cfg.position_only
                    else batch.variant_ids)
+        if self._new_head():
+            return self._readout_forward(batch, ref, var_ids, backend)
 
         pooled = None
         if self._decompose(cfg):
@@ -827,6 +894,53 @@ class VariantEffectModel(nn.Module):
         return VariantPrediction(pred=pred, additive=additive,
                                  interaction=interaction, token_score=token_score,
                                  hidden=h)
+
+    # -- minimal readouts (cfg.head != "mean") --------------------------------
+    def _readout_forward(self, batch, ref, var_ids, backend) -> VariantPrediction:
+        """Every backend reduced to the same thing: one final-layer state per
+        real substitution, rows in (variant, slot) order. Padded slots never
+        enter, so pooling and counts see real substitutions only."""
+        rows, slots = batch.var_mask.nonzero(as_tuple=True)
+        if self._use_ragged(backend):
+            offsets = torch.nn.functional.pad(batch.var_mask.sum(1).cumsum(0), (1, 0))
+            h = self._ragged_forward(batch, ref, var_ids, rows, slots, offsets, None)
+        else:
+            vout = self._backbone_forward(ref, batch.positions, var_ids, batch.var_mask,
+                                          self._attn_mask(batch), None, backend)
+            h = vout.hidden[rows, slots]
+        dt = self.head_mlp[0].weight.dtype
+        h = h.to(dt)                                           # (T, d); fp32 head
+        pred = self._readout(batch, ref, h, rows, slots, var_ids)
+        zt = torch.zeros(batch.n, batch.k, device=pred.device, dtype=pred.dtype)
+        return VariantPrediction(pred=pred, additive=torch.zeros_like(pred),
+                                 interaction=pred, token_score=zt, hidden=h)
+
+    def _readout(self, batch, ref, h, rows, slots, var_ids) -> torch.Tensor:
+        cfg = self.cfg
+        n = batch.n
+        k = torch.bincount(rows, minlength=n).to(h.dtype)      # real substitutions
+        logk = torch.log1p(k)[:, None]                         # WT: 0
+        if cfg.head in ("wt_relative", "mut_proj"):
+            pos = batch.positions[slots]                       # token index (BOS = 0)
+            ref_tok = batch.ref_ids.to(pos.device)[pos]
+            alt_tok = var_ids[rows, slots]
+            feats = [h]
+            if cfg.head == "wt_relative":
+                # the reference's final normed state at the same token: the
+                # space h lives in. Not detached: it carries gradient when the
+                # reference does (shared LoRA / trainable base in training).
+                hw = ref.final[0, pos].to(h.dtype)
+                feats += [hw, h - hw]
+            feats += [self.residue_embed(self._residue_index[ref_tok]),
+                      self.residue_embed(self._residue_index[alt_tok])]
+            z = self.token_proj(torch.cat(feats, -1))
+        else:
+            z = h
+        s = z.new_zeros(n, z.shape[1]).index_add(0, rows, z)   # WT: 0
+        mean = s / k.clamp_min(1)[:, None]
+        x = (torch.cat([mean, logk], -1) if cfg.head == "mean_count"
+             else torch.cat([s, mean, logk], -1))
+        return self.head_mlp(x).squeeze(-1)
 
     def _pool_rows(self, h, rows, n):
         """`_pool` over ragged rows: h (T, d), rows (T,) variant index -> (n, d)."""
