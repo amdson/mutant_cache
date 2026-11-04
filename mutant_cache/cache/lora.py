@@ -76,7 +76,9 @@ from mutant_cache.backbone.esmc import ESMC, swiglu_hidden_dim
 
 ATTN_TARGETS = ("q", "k", "v", "o")
 MLP_TARGETS = ("gate", "up", "down")
-ALL_TARGETS = ATTN_TARGETS + MLP_TARGETS
+ALL_TARGETS = ATTN_TARGETS + MLP_TARGETS  # historical ESM-C public constant
+ESM2_TARGETS = ATTN_TARGETS + ("fc1", "fc2")
+SUPPORTED_TARGETS = ALL_TARGETS + ("fc1", "fc2")
 DEFAULT_TARGETS = ("q", "o", "gate", "up", "down")
 COMPUTE_MODES = ("activation", "fp32")
 
@@ -97,9 +99,9 @@ class LoRAConfig:
         self.targets = tuple(self.targets)
         if self.compute not in COMPUTE_MODES:
             raise ValueError(f"LoRA compute must be one of {COMPUTE_MODES}, got {self.compute!r}")
-        bad = [t for t in self.targets if t not in ALL_TARGETS]
+        bad = [t for t in self.targets if t not in SUPPORTED_TARGETS]
         if bad:
-            raise ValueError(f"unknown LoRA target(s) {bad}; pick from {ALL_TARGETS}")
+            raise ValueError(f"unknown LoRA target(s) {bad}; pick from {SUPPORTED_TARGETS}")
         if self.r <= 0:
             raise ValueError(f"LoRA rank must be positive, got {self.r}")
 
@@ -136,11 +138,16 @@ class LoRADelta(nn.Module):
 class VariantLayerAdapters(nn.Module):
     """Adapters for one block, keyed by logical projection name."""
 
-    def __init__(self, d_model: int, cfg: LoRAConfig):
+    def __init__(self, d_model: int, cfg: LoRAConfig, block=None):
         super().__init__()
-        hid = swiglu_hidden_dim(d_model)
+        plain = getattr(block, "plain_mlp", False)
+        valid = ATTN_TARGETS + (("fc1", "fc2") if plain else MLP_TARGETS)
+        if set(cfg.targets) - set(valid):
+            raise ValueError(f"targets {cfg.targets} invalid for this backbone; choose from {valid}")
+        hid = block.ffn[3].in_features if plain else swiglu_hidden_dim(d_model)
         shapes = {"q": (d_model, d_model), "k": (d_model, d_model),
                   "v": (d_model, d_model), "o": (d_model, d_model),
+                  "fc1": (d_model, hid), "fc2": (hid, d_model),
                   "gate": (d_model, hid), "up": (d_model, hid), "down": (hid, d_model)}
         self.deltas = nn.ModuleDict({t: LoRADelta(*shapes[t], cfg) for t in cfg.targets})
 
@@ -153,9 +160,9 @@ def attach_variant_lora(model: ESMC, cfg: LoRAConfig | None = None,
     """Attach fresh variant-only adapters (fp32, on the model's device) to
     ``model.variant_adapters`` and, by default, freeze the base so only
     ``lora_*`` (and any hook modules) train."""
-    cfg = cfg or LoRAConfig()
+    cfg = cfg or LoRAConfig(targets=getattr(model, "default_lora_targets", DEFAULT_TARGETS))
     model.variant_adapters = nn.ModuleList(
-        [VariantLayerAdapters(model.d_model, cfg) for _ in range(model.n_layers)]
+        [VariantLayerAdapters(model.d_model, cfg, blk) for blk in model.blocks]
     ).to(device=model.device)
     model.lora_config = cfg
     if freeze_base:
@@ -167,9 +174,9 @@ def attach_shared_lora(model: ESMC, cfg: LoRAConfig | None = None,
                        freeze_base: bool = True) -> ESMC:
     """Attach fresh shared adapters (fp32) to ``model.shared_adapters``: applied
     on the reference *and* variant streams (see module docstring)."""
-    cfg = cfg or LoRAConfig()
+    cfg = cfg or LoRAConfig(targets=getattr(model, "default_lora_targets", DEFAULT_TARGETS))
     model.shared_adapters = nn.ModuleList(
-        [VariantLayerAdapters(model.d_model, cfg) for _ in range(model.n_layers)]
+        [VariantLayerAdapters(model.d_model, cfg, blk) for blk in model.blocks]
     ).to(device=model.device)
     model.shared_lora_config = cfg
     if freeze_base:

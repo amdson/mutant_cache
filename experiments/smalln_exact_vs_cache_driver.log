@@ -1,0 +1,25 @@
+16:35:03 start cache_n256_s0
+16:35:36 done  cache_n256_s0 rc=0
+16:35:36 start exact_n256_s0
+16:36:40 done  exact_n256_s0 rc=0
+16:36:40 start cache_n1024_s0
+16:37:21 done  cache_n1024_s0 rc=0
+16:37:21 start exact_n1024_s0
+16:38:40 done  exact_n1024_s0 rc=0
+16:38:40 start cache_n4096_s0
+16:40:13 done  cache_n4096_s0 rc=0
+16:40:13 start exact_n4096_s0
+16:42:37 done  exact_n4096_s0 rc=0
+16:42:37 start cache_n256_s1
+16:43:02 done  cache_n256_s1 rc=0
+16:43:02 start exact_n256_s1
+16:44:07 done  exact_n256_s1 rc=0
+16:44:07 start cache_n1024_s1
+16:44:47 done  cache_n1024_s1 rc=0
+16:44:47 start exact_n1024_s1
+16:46:06 done  exact_n1024_s1 rc=0
+16:46:06 start cache_n4096_s1
+16:47:42 done  cache_n4096_s1 rc=0
+16:47:42 start exact_n4096_s1
+16:50:06 done  exact_n4096_s1 rc=0
+all done

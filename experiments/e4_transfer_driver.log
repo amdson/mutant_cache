@@ -1,0 +1,42 @@
+REF=V_1e-3 HEADS=mean sum_mean_count TOKDIM=128 N=320 TASK=avgfp REPS=0 1 2
+14:03:12 start avgfp_ds320_V_1e-3_mean_r0
+14:05:27 done  avgfp_ds320_V_1e-3_mean_r0 rc=0
+14:05:27 start avgfp_ds320_V_1e-3_sum_mean_count_r0
+14:07:43 done  avgfp_ds320_V_1e-3_sum_mean_count_r0 rc=0
+14:07:43 start avgfp_ds320_V_1e-3_mean_r1
+14:10:10 done  avgfp_ds320_V_1e-3_mean_r1 rc=0
+14:10:10 start avgfp_ds320_V_1e-3_sum_mean_count_r1
+14:12:38 done  avgfp_ds320_V_1e-3_sum_mean_count_r1 rc=0
+14:12:38 start avgfp_ds320_V_1e-3_mean_r2
+14:14:54 done  avgfp_ds320_V_1e-3_mean_r2 rc=0
+14:14:54 start avgfp_ds320_V_1e-3_sum_mean_count_r2
+14:17:09 done  avgfp_ds320_V_1e-3_sum_mean_count_r2 rc=0
+all done
+REF=V_1e-3 HEADS=mean sum_mean_count TOKDIM=128 N=320 TASK=gb1 REPS=0 1 2
+14:17:09 start gb1_ds320_V_1e-3_mean_r0
+14:18:25 done  gb1_ds320_V_1e-3_mean_r0 rc=0
+14:18:25 start gb1_ds320_V_1e-3_sum_mean_count_r0
+14:19:41 done  gb1_ds320_V_1e-3_sum_mean_count_r0 rc=0
+14:19:41 start gb1_ds320_V_1e-3_mean_r1
+14:20:58 done  gb1_ds320_V_1e-3_mean_r1 rc=0
+14:20:58 start gb1_ds320_V_1e-3_sum_mean_count_r1
+14:22:15 done  gb1_ds320_V_1e-3_sum_mean_count_r1 rc=0
+14:22:15 start gb1_ds320_V_1e-3_mean_r2
+14:23:32 done  gb1_ds320_V_1e-3_mean_r2 rc=0
+14:23:32 start gb1_ds320_V_1e-3_sum_mean_count_r2
+14:24:47 done  gb1_ds320_V_1e-3_sum_mean_count_r2 rc=0
+all done
+REF=V_1e-3 HEADS=mean sum_mean_count TOKDIM=128 N=1280 TASK=gb1 REPS=0 1 2
+14:24:47 start gb1_ds1280_V_1e-3_mean_r0
+14:26:02 done  gb1_ds1280_V_1e-3_mean_r0 rc=0
+14:26:02 start gb1_ds1280_V_1e-3_sum_mean_count_r0
+14:27:16 done  gb1_ds1280_V_1e-3_sum_mean_count_r0 rc=0
+14:27:16 start gb1_ds1280_V_1e-3_mean_r1
+14:28:30 done  gb1_ds1280_V_1e-3_mean_r1 rc=0
+14:28:30 start gb1_ds1280_V_1e-3_sum_mean_count_r1
+14:29:45 done  gb1_ds1280_V_1e-3_sum_mean_count_r1 rc=0
+14:29:45 start gb1_ds1280_V_1e-3_mean_r2
+14:30:59 done  gb1_ds1280_V_1e-3_mean_r2 rc=0
+14:30:59 start gb1_ds1280_V_1e-3_sum_mean_count_r2
+14:32:14 done  gb1_ds1280_V_1e-3_sum_mean_count_r2 rc=0
+all done

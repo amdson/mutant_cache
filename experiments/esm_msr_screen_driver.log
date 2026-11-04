@@ -1,0 +1,12 @@
+17:23:35 start joint_alr3e-4_hlr1e-3_s0
+18:20:37 done  joint_alr3e-4_hlr1e-3_s0 rc=0
+18:20:37 start joint_alr3e-4_hlr3e-3_s0
+19:16:32 done  joint_alr3e-4_hlr3e-3_s0 rc=0
+19:16:32 start joint_alr1e-3_hlr1e-3_s0
+20:12:07 done  joint_alr1e-3_hlr1e-3_s0 rc=0
+20:12:07 start joint_alr1e-3_hlr3e-3_s0
+21:08:25 done  joint_alr1e-3_hlr3e-3_s0 rc=0
+21:08:25 start additive_alr3e-4_hlr1e-3_s0
+22:04:26 done  additive_alr3e-4_hlr1e-3_s0 rc=0
+22:04:26 start additive_alr3e-4_hlr3e-3_s0
+22:59:33 stopped (user request): replaced by esm_msr_screen_es.sh with early stopping; additive_alr3e-4_hlr3e-3_s0 aborted

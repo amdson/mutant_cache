@@ -1,0 +1,17 @@
+22:59:58 start joint_alr3e-4_hlr1e-3_s0
+23:09:50 done  joint_alr3e-4_hlr1e-3_s0 rc=0
+23:09:50 start joint_alr3e-4_hlr3e-3_s0
+23:17:52 done  joint_alr3e-4_hlr3e-3_s0 rc=0
+23:17:52 start joint_alr1e-3_hlr1e-3_s0
+23:25:40 done  joint_alr1e-3_hlr1e-3_s0 rc=0
+23:25:40 start joint_alr1e-3_hlr3e-3_s0
+23:33:45 done  joint_alr1e-3_hlr3e-3_s0 rc=0
+23:33:45 start additive_alr3e-4_hlr1e-3_s0
+23:41:28 done  additive_alr3e-4_hlr1e-3_s0 rc=0
+23:41:28 start additive_alr3e-4_hlr3e-3_s0
+23:48:33 done  additive_alr3e-4_hlr3e-3_s0 rc=0
+23:48:33 start additive_alr1e-3_hlr1e-3_s0
+23:55:43 done  additive_alr1e-3_hlr1e-3_s0 rc=0
+23:55:43 start additive_alr1e-3_hlr3e-3_s0
+00:02:48 done  additive_alr1e-3_hlr3e-3_s0 rc=0
+all done

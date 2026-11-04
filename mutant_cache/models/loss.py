@@ -71,7 +71,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-LOSSES = ("rank", "mse_rank", "mse_dg", "listnet", "listmle", "soft_spearman")
+LOSSES = ("rank", "mse_rank", "mse_dg", "huber_dg", "listnet", "listmle", "soft_spearman")
 
 
 def _group_eq(group, n, device):
@@ -315,6 +315,8 @@ class VariantLoss(nn.Module):
                 parts[part] = c.mse_weight * mse_dg_loss(
                     pred, target, se, min_se=c.min_se,
                     inverse_variance=c.inverse_variance)
+            elif part == "huber_dg":
+                parts[part] = c.mse_weight * F.huber_loss(pred, target)
         total = sum(parts.values())
         return total, {k: float(v.detach()) for k, v in parts.items()}
 

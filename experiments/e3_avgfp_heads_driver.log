@@ -1,0 +1,20 @@
+REF=V_1e-3 HEADS=mean_count sum_mean_count wt_relative TOKDIM=128 N=1280 TASK=avgfp REPS=0 1 2
+13:34:29 start avgfp_ds1280_V_1e-3_mean_count_r0
+13:36:45 done  avgfp_ds1280_V_1e-3_mean_count_r0 rc=0
+13:36:45 start avgfp_ds1280_V_1e-3_sum_mean_count_r0
+13:39:03 done  avgfp_ds1280_V_1e-3_sum_mean_count_r0 rc=0
+13:39:03 start avgfp_ds1280_V_1e-3_wt_relative_r0
+13:41:21 done  avgfp_ds1280_V_1e-3_wt_relative_r0 rc=0
+13:41:21 start avgfp_ds1280_V_1e-3_mean_count_r1
+13:43:42 done  avgfp_ds1280_V_1e-3_mean_count_r1 rc=0
+13:43:42 start avgfp_ds1280_V_1e-3_sum_mean_count_r1
+13:46:05 done  avgfp_ds1280_V_1e-3_sum_mean_count_r1 rc=0
+13:46:05 start avgfp_ds1280_V_1e-3_wt_relative_r1
+13:48:26 done  avgfp_ds1280_V_1e-3_wt_relative_r1 rc=0
+13:48:26 start avgfp_ds1280_V_1e-3_mean_count_r2
+13:50:47 done  avgfp_ds1280_V_1e-3_mean_count_r2 rc=0
+13:50:47 start avgfp_ds1280_V_1e-3_sum_mean_count_r2
+13:53:08 done  avgfp_ds1280_V_1e-3_sum_mean_count_r2 rc=0
+13:53:08 start avgfp_ds1280_V_1e-3_wt_relative_r2
+13:55:29 done  avgfp_ds1280_V_1e-3_wt_relative_r2 rc=0
+all done

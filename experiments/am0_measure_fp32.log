@@ -1,0 +1,43 @@
+synthetic 1AOY {"L": 69, "n_variants": 6, "ref_vs_wt_full_maxabs": 0.0, "ragged_hidden_maxabs": 8.121132850646973e-07, "ragged_layers_rel": 1.4614571455240366e-06, "ragged_min_cos": 0.9999997019767761, "padded_hidden_maxabs": 7.078051567077637e-07, "padded_layers_rel": 1.4317522527562687e-06, "padded_min_cos": 0.9999997019767761, "exact_vs_full_maxabs": 0.0}
+synthetic EEHEE_rd3_0809 {"L": 43, "n_variants": 6, "ref_vs_wt_full_maxabs": 0.0, "ragged_hidden_maxabs": 5.364418029785156e-07, "ragged_layers_rel": 1.738025957820355e-06, "ragged_min_cos": 0.9999997615814209, "padded_hidden_maxabs": 5.662441253662109e-07, "padded_layers_rel": 1.5774031680848566e-06, "padded_min_cos": 0.9999997615814209, "exact_vs_full_maxabs": 0.0}
+0 1AOY L=69 N=60 oracle=8.1e-07 {'teacher_ms_N2048': 6911.3, 'teacher_mb_N2048': 24562.7, 'sparse_ms_N2048': 190.0, 'sparse_mb_N2048': 2501.7}
+1 1K1V L=41 N=90 oracle=6.6e-07 {}
+2 1PSE L=68 N=90 oracle=1.8e-06 {}
+3 1PV0 L=44 N=90 oracle=9.7e-07 {}
+4 1SF0_V59K L=65 N=60 oracle=8.6e-07 {}
+5 2CJJ L=54 N=90 oracle=8.6e-07 {}
+6 2D1U L=72 N=90 oracle=1.0e-06 {}
+7 2EXD L=58 N=90 oracle=1.2e-06 {}
+8 2K9D L=44 N=90 oracle=6.6e-07 {}
+9 2KT8_G54S L=67 N=60 oracle=8.5e-07 {}
+10 2KVT L=52 N=90 oracle=8.9e-07 {}
+11 2L7M L=52 N=90 oracle=1.0e-06 {}
+12 2L9R L=61 N=90 oracle=9.9e-07 {}
+13 2LC2 L=64 N=90 oracle=9.5e-07 {}
+14 2LQK L=62 N=90 oracle=1.0e-06 {}
+15 2LYP_V26S L=64 N=60 oracle=8.0e-07 {}
+16 2M0C L=48 N=90 oracle=1.7e-06 {}
+17 2M2J L=71 N=90 oracle=9.2e-07 {}
+18 2M7O_I21A L=60 N=60 oracle=6.0e-07 {}
+19 2MKX_N29S L=47 N=60 oracle=5.6e-06 {}
+20 2QFF L=70 N=60 oracle=5.4e-07 {}
+21 2WNM L=56 N=60 oracle=1.1e-06 {}
+22 5JRT L=59 N=90 oracle=7.2e-07 {}
+23 6ACV L=66 N=90 oracle=1.2e-06 {}
+24 EEHEE_rd3_0809 L=43 N=60 oracle=4.3e-07 {}
+25 EEHEE_rd4_0005 L=43 N=60 oracle=4.2e-07 {}
+26 EEHEE_rd4_0481 L=43 N=60 oracle=4.2e-07 {}
+27 EEHEE_rd4_0647 L=43 N=60 oracle=5.7e-07 {}
+28 EHEE_rd1_0407 L=40 N=60 oracle=1.0e-06 {}
+29 EHEE_rd2_0191 L=40 N=60 oracle=6.3e-07 {}
+30 EHEE_rd2_0601 L=40 N=60 oracle=6.0e-07 {}
+31 EHEE_rd2_0751 L=40 N=60 oracle=4.8e-07 {}
+32 EHEE_rd4_0172 L=40 N=60 oracle=5.4e-07 {}
+33 HEEH_rd3_0223 L=43 N=60 oracle=4.1e-07 {}
+34 HEEH_rd4_0097 L=43 N=60 oracle=4.2e-07 {}
+35 HHH_rd1_0578 L=43 N=60 oracle=4.8e-07 {}
+36 r6_560_TrROS_Hall L=56 N=60 oracle=5.5e-07 {}
+37 r6_831_TrROS_Hall L=56 N=60 oracle=6.6e-07 {}
+38 v2R31S_R32S_2N5D L=70 N=60 oracle=5.7e-07 {}
+39 v2_2LDM L=51 N=60 oracle=8.1e-07 {}
+done /home/andrew/mutant_cache_scratch/am0/fp32 118s

@@ -1,0 +1,13 @@
+task,budget,replicate,file,sha1,n_train,n_val,n_dev
+metl_avgfp_dms,320,0,metl_avgfp_dms_tune_ds320_r0.parquet,1f761537324690ff,256,64,5000
+metl_avgfp_dms,320,1,metl_avgfp_dms_tune_ds320_r1.parquet,064ff46eab0d1369,256,64,5000
+metl_avgfp_dms,320,2,metl_avgfp_dms_tune_ds320_r2.parquet,a76064836b2095fc,256,64,5000
+metl_avgfp_dms,1280,0,metl_avgfp_dms_tune_ds1280_r0.parquet,0fe39b43010e5442,1024,256,5000
+metl_avgfp_dms,1280,1,metl_avgfp_dms_tune_ds1280_r1.parquet,b01d84303637d619,1024,256,5000
+metl_avgfp_dms,1280,2,metl_avgfp_dms_tune_ds1280_r2.parquet,95db43aa180fa65f,1024,256,5000
+metl_gb1_dms,320,0,metl_gb1_dms_tune_ds320_r0.parquet,b201d97a37623431,256,64,5000
+metl_gb1_dms,320,1,metl_gb1_dms_tune_ds320_r1.parquet,b00dd1317cbd65ff,256,64,5000
+metl_gb1_dms,320,2,metl_gb1_dms_tune_ds320_r2.parquet,bbe543131052b835,256,64,5000
+metl_gb1_dms,1280,0,metl_gb1_dms_tune_ds1280_r0.parquet,6f1fc158ee694270,1024,256,5000
+metl_gb1_dms,1280,1,metl_gb1_dms_tune_ds1280_r1.parquet,ddb12ba640edbb7f,1024,256,5000
+metl_gb1_dms,1280,2,metl_gb1_dms_tune_ds1280_r2.parquet,3e49d4cf1d9c8d31,1024,256,5000

@@ -52,7 +52,7 @@ from mutant_cache.eval import (
     ResultsTable, depth_spearman, depth_summary, epsilon_correlation,
 )
 from mutant_cache.models import (
-    ABLATIONS, BACKENDS, HEADS, LOSSES, LossConfig, VariantEffectModel,
+    ABLATIONS, BACKENDS, COMPOSITIONS, HEADS, LOSSES, LossConfig, VariantEffectModel,
     VariantModelConfig, VariantLoss, build_variant_batches,
 )
 from mutant_cache.models.data_compat import apply_split, load_split, load_tables
@@ -120,8 +120,8 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
     g.add_argument("--lora-alpha", type=float, default=None,
                    help="LoRA alpha for both sets (default 2*r)")
     g.add_argument("--lora-targets", nargs="+", default=None,
-                   help="variant LoRA projections, from q k v o gate up down; "
-                        "default q o gate up down (the ones applied only to the "
+                   help="LoRA projections: q k v o plus gate up down for ESM-C "
+                        "or fc1 fc2 for ESM-2; defaults q o and all MLP projections (the ones applied only to the "
                         "variant stream; adapting k/v makes variant and "
                         "reference keys use different projections)")
     g.add_argument("--shared-lora-targets", nargs="+", default=None,
@@ -170,6 +170,12 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
                    help="--head wt_relative / mut_proj: token projection width")
     g.add_argument("--residue-embed-dim", type=int, default=16,
                    help="--head wt_relative / mut_proj: ref/alt residue embedding width")
+    g.add_argument("--zero-anchor", action="store_true",
+                   help="minimal heads other than 'mean': subtract the head's "
+                        "wild-type output, so the wild type predicts exactly 0")
+    g.add_argument("--composition", choices=list(COMPOSITIONS), default="joint",
+                   help="joint: score each variant in one forward; additive: "
+                        "score each substitution alone and sum (needs --zero-anchor)")
     g.add_argument("--pool", choices=["mean", "sum", "max"], default="mean")
     g.add_argument("--head-hidden", type=int, default=128)
     g.add_argument("--head-layers", type=int, default=2)
@@ -416,6 +422,9 @@ def load_backbone(args, device, dtype):
         d, h, n = (int(x) for x in args.backbone.split(":")[1:4])
         torch.manual_seed(args.seed)
         return ESMC(d, h, n).to(device=device, dtype=dtype).eval()
+    if args.backbone.startswith("esm2_"):
+        from mutant_cache.backbone.esm2 import load_esm2
+        return load_esm2(args.backbone, device=device, dtype=dtype)
     from mutant_cache.backbone import load_esmc
     return load_esmc(args.backbone, device=device, dtype=dtype)
 
@@ -435,7 +444,7 @@ def attach_lora(args, backbone) -> None:
 
     def cfg(r, targets):
         return LoRAConfig(r=r, alpha=args.lora_alpha or 2.0 * r,
-                          targets=tuple(targets or DEFAULT_TARGETS),
+                          targets=tuple(targets or getattr(backbone, "default_lora_targets", DEFAULT_TARGETS)),
                           compute=args.lora_compute)
     freeze = not args.train_backbone
     if args.lora_r:
@@ -646,7 +655,9 @@ def build_config(args, backbone, n_assays: int) -> VariantModelConfig:
         position_only_token=args.position_only_token,
         random_ref_seed=args.random_ref_seed, minimal=args.minimal,
         head=args.head, token_proj_dim=args.token_proj_dim,
-        residue_embed_dim=args.residue_embed_dim)
+        residue_embed_dim=args.residue_embed_dim,
+        zero_anchor=getattr(args, "zero_anchor", False),
+        composition=getattr(args, "composition", "joint"))
 
 
 def build_loss(args) -> VariantLoss:

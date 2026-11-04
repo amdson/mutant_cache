@@ -1,0 +1,13 @@
+Consider using tensor.detach() first. (Triggered internally at /pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:836.)
+  return float(torch.linalg.vector_norm(
+batch: 48 variants, depth histogram {1: 16, 2: 8, 3: 8, 4: 5, 5: 4, 6: 3, 7: 1, 8: 2, 9: 1}
+variant/fp32/activation  loss 0.6929 -> 0.0914  ref recomputed/step 0.0  frozen ok True  oracle pred diff (step 20) 1.67e-05  peak 28.83 GB  103 ms/step
+shared/fp32/activation   loss 0.6929 -> 0.0962  ref recomputed/step 1.0  frozen ok True  oracle pred diff (step 20) 7.63e-06  peak 30.64 GB  189 ms/step
+both/fp32/activation     loss 0.6929 -> 0.1067  ref recomputed/step 1.0  frozen ok True  oracle pred diff (step 20) 2.10e-05  peak 32.04 GB  233 ms/step
+full/fp32/activation     loss 0.6929 -> 0.1912  ref recomputed/step 1.0  frozen ok None  oracle pred diff (step 20) 7.63e-06  peak 35.37 GB  203 ms/step
+variant/bf16/activation  loss 0.6929 -> 0.0884  ref recomputed/step 0.0  frozen ok True  oracle pred diff (step 20) 2.89e-02  peak 14.68 GB  115 ms/step
+shared/bf16/activation   loss 0.6929 -> 0.1033  ref recomputed/step 1.0  frozen ok True  oracle pred diff (step 20) 2.22e-02  peak 15.61 GB  213 ms/step
+both/bf16/activation     loss 0.6929 -> 0.1232  ref recomputed/step 1.0  frozen ok True  oracle pred diff (step 20) 2.12e-02  peak 16.37 GB  271 ms/step
+variant/bf16/fp32        loss 0.6929 -> 0.0855  ref recomputed/step 0.0  frozen ok True  oracle pred diff (step 20) 4.79e-02  peak 21.93 GB  113 ms/step
+shared/bf16/fp32         loss 0.6929 -> 0.1070  ref recomputed/step 1.0  frozen ok True  oracle pred diff (step 20) 1.50e-02  peak 20.36 GB  210 ms/step
+both/bf16/fp32           loss 0.6929 -> 0.1507  ref recomputed/step 1.0  frozen ok True  oracle pred diff (step 20) 6.72e-02  peak 29.34 GB  265 ms/step

@@ -74,6 +74,12 @@ BACKENDS = ("cache", "recompute", "exact")
 #   mut_proj        wt_relative without the WT states: phi([h_mut_i, e_ref_i, e_alt_i])
 #                   (the capacity control for wt_relative)
 HEADS = ("mean", "mean_count", "sum_mean_count", "wt_relative", "mut_proj")
+# How a multi-mutant's prediction is composed (cfg.composition):
+#   joint     one forward of the whole variant (mutated tokens see each other)
+#   additive  each real substitution scored as its own single, then summed:
+#             d(AB) = d(A) + d(B). Needs zero_anchor, or every single would add
+#             its own copy of the head's WT offset.
+COMPOSITIONS = ("joint", "additive")
 N_RESIDUE_CLASSES = 21                  # 20 canonical residues + "other"
 
 
@@ -134,6 +140,11 @@ class VariantModelConfig:
     head: str = "mean"
     token_proj_dim: int = 128           # wt_relative / mut_proj: width of phi
     residue_embed_dim: int = 16         # wt_relative / mut_proj: e_ref / e_alt width
+    # minimal readouts other than "mean": subtract the head's output on the
+    # wild type (k = 0 -> all-zero features), so d(WT) = 0 exactly, for every
+    # protein. f(WT) does not depend on the protein for these heads.
+    zero_anchor: bool = False
+    composition: str = "joint"          # see COMPOSITIONS
 
     def __post_init__(self):
         if self.head not in HEADS:
@@ -143,6 +154,12 @@ class VariantModelConfig:
                 raise ValueError(f"head={self.head!r} is a minimal-model readout; set minimal=True")
             if self.pool != "mean":
                 raise ValueError(f"head={self.head!r} defines its own pooling; leave pool='mean'")
+        if self.zero_anchor and self.head == "mean":
+            raise ValueError("zero_anchor needs a minimal head other than 'mean'")
+        if self.composition not in COMPOSITIONS:
+            raise ValueError(f"composition must be one of {COMPOSITIONS}")
+        if self.composition == "additive" and not self.zero_anchor:
+            raise ValueError("composition='additive' needs zero_anchor=True")
         if self.ablation not in ABLATIONS:
             raise ValueError(f"ablation must be one of {ABLATIONS}")
         if self.minimal:
@@ -363,6 +380,30 @@ def build_variant_batches(
         order = rng.permutation(len(batches))
         batches = [batches[i] for i in order]
     return batches, assay_index
+
+
+def singles_batch(batch: VariantBatch) -> tuple[VariantBatch, torch.Tensor]:
+    """Every real substitution of ``batch`` as its own single-mutant variant.
+
+    Returns ``(singles, owner)``: ``singles`` keeps the batch's positions and
+    reference (so the cached reference is reused), with one row per
+    ``var_mask`` entry in (variant, slot) order; ``owner[i]`` is the source
+    variant of row ``i``. Wild-type rows contribute no singles.
+    """
+    rows, slots = batch.var_mask.nonzero(as_tuple=True)
+    t = int(rows.numel())
+    ref_tok = batch.ref_ids.to(batch.positions.device)[batch.positions]
+    vids = ref_tok[None].repeat(t, 1)
+    vmask = torch.zeros(t, batch.k, dtype=torch.bool, device=batch.var_mask.device)
+    ar = torch.arange(t, device=vids.device)
+    vids[ar, slots] = batch.variant_ids[rows, slots]
+    vmask[ar, slots] = True
+    one = torch.ones(t, dtype=batch.n_mut.dtype, device=batch.n_mut.device)
+    return VariantBatch(
+        target_id=batch.target_id, score_set_id=batch.score_set_id,
+        ref_ids=batch.ref_ids, positions=batch.positions,
+        variant_ids=vids, var_mask=vmask, assay_ids=batch.assay_ids[rows],
+        n_mut=one, ref=batch.ref), rows
 
 
 # ── model ────────────────────────────────────────────────────────────────────
@@ -828,9 +869,18 @@ class VariantEffectModel(nn.Module):
         return h, token_score
 
     def forward(self, batch: VariantBatch, *, backend: str | None = None,
-                use_ref_cache: bool = True) -> VariantPrediction:
+                use_ref_cache: bool = True,
+                composition: str | None = None) -> VariantPrediction:
+        """``composition`` overrides ``cfg.composition`` for this call: a joint
+        model evaluated with ``"additive"`` is the S-add diagnostic (same
+        parameters, doubles scored as the sum of their singles)."""
         cfg = self.cfg
         backend = backend or cfg.backend
+        composition = composition or cfg.composition
+        if composition == "additive":
+            if not cfg.zero_anchor:
+                raise ValueError("additive composition needs zero_anchor=True")
+            return self._forward_additive(batch, backend, use_ref_cache)
         ref = self.reference_states(batch, use_cache=use_ref_cache)
         if cfg.random_reference:
             ref = self._randomize(ref, batch.target_id)
@@ -895,6 +945,20 @@ class VariantEffectModel(nn.Module):
                                  interaction=interaction, token_score=token_score,
                                  hidden=h)
 
+    def _forward_additive(self, batch, backend, use_ref_cache) -> VariantPrediction:
+        singles, owner = singles_batch(batch)
+        zt = torch.zeros(batch.n, batch.k, device=batch.variant_ids.device)
+        if singles.n == 0:                     # an all-wild-type batch
+            z = zt.new_zeros(batch.n)
+            return VariantPrediction(pred=z, additive=z, interaction=z,
+                                     token_score=zt, hidden=zt.new_zeros(0, 0))
+        out = self.forward(singles, backend=backend, use_ref_cache=use_ref_cache,
+                           composition="joint")
+        pred = out.pred.new_zeros(batch.n).index_add(0, owner, out.pred)
+        return VariantPrediction(pred=pred, additive=pred,
+                                 interaction=torch.zeros_like(pred),
+                                 token_score=zt.to(pred.dtype), hidden=out.hidden)
+
     # -- minimal readouts (cfg.head != "mean") --------------------------------
     def _readout_forward(self, batch, ref, var_ids, backend) -> VariantPrediction:
         """Every backend reduced to the same thing: one final-layer state per
@@ -940,7 +1004,13 @@ class VariantEffectModel(nn.Module):
         mean = s / k.clamp_min(1)[:, None]
         x = (torch.cat([mean, logk], -1) if cfg.head == "mean_count"
              else torch.cat([s, mean, logk], -1))
-        return self.head_mlp(x).squeeze(-1)
+        out = self.head_mlp(x).squeeze(-1)
+        if cfg.zero_anchor:
+            # the wild type's features are all zero (no substitutions); set its
+            # row to exactly 0 rather than f(0) - f(0) up to batch-shape rounding
+            out = out - self.head_mlp(x.new_zeros(1, x.shape[1])).squeeze(-1)
+            out = out.masked_fill(k == 0, 0.0)
+        return out
 
     def _pool_rows(self, h, rows, n):
         """`_pool` over ragged rows: h (T, d), rows (T,) variant index -> (n, d)."""
@@ -969,12 +1039,13 @@ class VariantEffectModel(nn.Module):
         return (h * mask[..., None]).sum(1) / denom
 
     @torch.no_grad()
-    def predict(self, batches, backend: str | None = None):
+    def predict(self, batches, backend: str | None = None,
+                composition: str | None = None):
         """(row_index, prediction) over a list of batches, as 1-D tensors."""
         self.eval()
         idx, out = [], []
         for b in batches:
-            p = self.forward(b, backend=backend)
+            p = self.forward(b, backend=backend, composition=composition)
             out.append(p.pred.detach().float().cpu())
             idx.append(b.row_index.cpu() if b.row_index is not None
                        else torch.arange(b.n))

@@ -1,0 +1,11 @@
+synthetic 1AOY {"L": 69, "n_variants": 6, "ref_vs_wt_full_maxabs": 0.0, "ragged_hidden_maxabs": 0.0098876953125, "ragged_layers_rel": 0.02142857201397419, "ragged_min_cos": 0.9994214177131653, "padded_hidden_maxabs": 0.0078125, "padded_layers_rel": 0.017605634406208992, "padded_min_cos": 0.9997595548629761, "teacher_ms_N": 14.147136360406876, "teacher_mb_N": 836.9541015625, "sparse_ms_N": 21.137240032354992, "sparse_mb_N": 808.6337890625, "teacher_ms_N2048": 1632.2817454735439, "teacher_mb_N2048": 11898.33349609375, "sparse_ms_N2048": 188.7240931391716, "sparse_mb_N2048": 1049.197265625, "ref_ms": 20.04200468460719, "ref_mb": 816.96923828125, "exact_vs_full_maxabs": 0.0}
+synthetic EEHEE_rd3_0809 {"L": 43, "n_variants": 6, "ref_vs_wt_full_maxabs": 0.0, "ragged_hidden_maxabs": 0.0078125, "ragged_layers_rel": 0.017241379246115685, "ragged_min_cos": 0.999902606010437, "padded_hidden_maxabs": 0.0078125, "padded_layers_rel": 0.02469135820865631, "padded_min_cos": 0.9998538494110107, "teacher_ms_N": 14.899534483750662, "teacher_mb_N": 782.14599609375, "sparse_ms_N": 21.130800247192383, "sparse_mb_N": 765.6376953125, "teacher_ms_N2048": 1054.660086830457, "teacher_mb_N2048": 7792.87646484375, "sparse_ms_N2048": 188.90405942996344, "sparse_mb_N2048": 1006.150390625, "ref_ms": 19.251558929681778, "ref_mb": 769.46630859375, "exact_vs_full_maxabs": 0.0}
+0 1AOY L=69 N=60 oracle=7.8e-03 teacher=1649.4ms sparse=51.3ms
+1 1K1V L=41 N=90 oracle=7.8e-03 teacher=1017.3ms sparse=71.2ms
+2 1PSE L=68 N=90 oracle=9.8e-03 teacher=1638.4ms sparse=71.4ms
+3 1PV0 L=44 N=90 oracle=9.8e-03 teacher=1095.1ms sparse=71.3ms
+4 1SF0_V59K L=65 N=60 oracle=1.2e-02 teacher=1575.6ms sparse=51.6ms
+5 2CJJ L=54 N=90 oracle=8.8e-03 teacher=1322.3ms sparse=71.4ms
+6 2D1U L=72 N=90 oracle=5.9e-03 teacher=1741.9ms sparse=71.6ms
+7 2EXD L=58 N=90 oracle=7.8e-03 teacher=1419.0ms sparse=71.7ms
+done /home/andrew/mutant_cache_scratch/am0/bf16 92s

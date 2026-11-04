@@ -1,7 +1,7 @@
 """Model layer: variant tokens over the sparse cache, and the objectives."""
 from mutant_cache.models.variant_model import (
-    ABLATIONS, BACKENDS, HEADS, VariantBatch, VariantEffectModel, VariantModelConfig,
-    VariantPrediction, build_variant_batches,
+    ABLATIONS, BACKENDS, COMPOSITIONS, HEADS, VariantBatch, VariantEffectModel,
+    VariantModelConfig, VariantPrediction, build_variant_batches, singles_batch,
 )
 from mutant_cache.models.loss import (
     LOSSES, LossConfig, ScoreSetBatchSampler, VariantLoss, listmle_loss,
@@ -10,8 +10,9 @@ from mutant_cache.models.loss import (
 )
 
 __all__ = [
-    "ABLATIONS", "BACKENDS", "HEADS", "VariantBatch", "VariantEffectModel",
-    "VariantModelConfig", "VariantPrediction", "build_variant_batches",
+    "ABLATIONS", "BACKENDS", "COMPOSITIONS", "HEADS", "VariantBatch",
+    "VariantEffectModel", "VariantModelConfig", "VariantPrediction",
+    "build_variant_batches", "singles_batch",
     "LOSSES", "LossConfig", "ScoreSetBatchSampler", "VariantLoss",
     "pairwise_rank_loss", "listnet_loss", "listmle_loss", "soft_spearman_loss",
     "mse_rank_loss", "mse_dg_loss",

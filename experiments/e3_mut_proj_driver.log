@@ -1,0 +1,8 @@
+REF=V_1e-3 HEADS=mut_proj TOKDIM=325 N=1280 TASK=avgfp REPS=0 1 2
+13:55:54 start avgfp_ds1280_V_1e-3_mut_proj_w325_r0
+13:58:11 done  avgfp_ds1280_V_1e-3_mut_proj_w325_r0 rc=0
+13:58:11 start avgfp_ds1280_V_1e-3_mut_proj_w325_r1
+14:00:33 done  avgfp_ds1280_V_1e-3_mut_proj_w325_r1 rc=0
+14:00:33 start avgfp_ds1280_V_1e-3_mut_proj_w325_r2
+14:02:53 done  avgfp_ds1280_V_1e-3_mut_proj_w325_r2 rc=0
+all done

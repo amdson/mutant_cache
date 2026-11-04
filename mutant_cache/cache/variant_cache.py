@@ -149,8 +149,9 @@ def _reference_kv_layer(model: ESMC, layer: int, x: torch.Tensor, cos, sin):
     L = x.shape[1]
     xn = attn.layernorm_qkv[0](x)
     w = attn.layernorm_qkv[1].weight
-    k = F.linear(xn, w[d:2 * d])
-    v = F.linear(xn, w[2 * d:])
+    bias = attn.layernorm_qkv[1].bias
+    k = F.linear(xn, w[d:2 * d], None if bias is None else bias[d:2*d])
+    v = F.linear(xn, w[2 * d:], None if bias is None else bias[2*d:])
     shared = (_adapter(model, layer)[0], None)
     k = _add(k, _delta(shared, "k", xn, None))
     v = _add(v, _delta(shared, "v", xn, None))
@@ -236,7 +237,7 @@ def _slot_key_mask(model: ESMC, var_mask, N: int, K: int, device):
 
 
 def _embed_variants(model: ESMC, ref: ReferenceStates, positions, variant_ids, var_mask):
-    x = model.embed(variant_ids)
+    x = getattr(model, "embed_sparse", model.embed)(variant_ids)
     if model.variant_extra_embed is not None:
         x = x + model.variant_extra_embed(x)
     return _clamp(x, ref.layer_inputs[0], positions, var_mask)
@@ -277,6 +278,9 @@ def _ffn(blk, x, ad, rowmask):
     """blk.ffn unrolled so gate/up/down can each take an adapter delta."""
     ln, fc1, _, fc2 = blk.ffn
     xn = ln(x)
+    if getattr(blk, "plain_mlp", False):
+        inner = blk.ffn[2](_add(fc1(xn), _delta(ad, "fc1", xn, rowmask)))
+        return _add(fc2(inner), _delta(ad, "fc2", inner, rowmask))
     hid = fc2.in_features
     h = F.linear(xn, fc1.weight)
     g, u = h[..., :hid], h[..., hid:]
@@ -288,7 +292,7 @@ def _ffn(blk, x, ad, rowmask):
 
 def _qkv(attn, x, ad, rowmask, d):
     xn = attn.layernorm_qkv[0](x)
-    qkv = F.linear(xn, attn.layernorm_qkv[1].weight)
+    qkv = attn.layernorm_qkv[1](xn)
     q, k, v = qkv[..., :d], qkv[..., d:2 * d], qkv[..., 2 * d:]
     q = _add(q, _delta(ad, "q", xn, rowmask))
     k = _add(k, _delta(ad, "k", xn, rowmask))
@@ -388,7 +392,7 @@ def forward_variants(model: ESMC, ref: ReferenceStates, positions, variant_ids,
     N, K = variant_ids.shape
     L = ref.seq_len
     d, h, dh = model.d_model, model.n_heads, model.head_dim
-    scale = dh ** -0.5
+    scale = getattr(model, "attention_scale", dh ** -0.5)
     dev = model.device
 
     x = _embed_variants(model, ref, positions, variant_ids, var_mask)
@@ -592,7 +596,7 @@ def forward_variants_ragged(model: ESMC, ref: ReferenceStates, rv: RaggedVariant
     rv = rv.to(dev)
     T, N, L = rv.n_tokens, rv.n_variants, ref.seq_len
     d, h, dh = model.d_model, model.n_heads, model.head_dim
-    scale = dh ** -0.5
+    scale = getattr(model, "attention_scale", dh ** -0.5)
     pos = rv.positions.long()
     seg = rv.seg()
     slot = (rv.slots.long() if rv.slots is not None
@@ -611,7 +615,7 @@ def forward_variants_ragged(model: ESMC, ref: ReferenceStates, rv: RaggedVariant
                              logits=model.sequence_head(empty) if output_logits else None,
                              layer_hidden=[empty] * model.n_layers if output_layers else None,
                              hidden_prenorm=empty)
-    x = model.embed(ids)[None]                                 # (1, T, d)
+    x = getattr(model, "embed_sparse", model.embed)(ids)[None]                                 # (1, T, d)
     if model.variant_extra_embed is not None:
         x = x + model.variant_extra_embed(x)                   # hook sees real rows only
     T_out = T
@@ -621,7 +625,7 @@ def forward_variants_ragged(model: ESMC, ref: ReferenceStates, rv: RaggedVariant
         # every call in one compiled shape regime.
         pad = -T % 128
         z = torch.zeros(pad, dtype=torch.long, device=dev)
-        x = torch.cat([x, model.embed(z + ref.ids[0])[None].to(x.dtype)], dim=1)
+        x = torch.cat([x, getattr(model, "embed_sparse", model.embed)(z + ref.ids[0])[None].to(x.dtype)], dim=1)
         pos, slot, seg = torch.cat([pos, z]), torch.cat([slot, z]), torch.cat([seg, z + N])
         T = T + pad
     cos, sin = model.rope(pos, x.dtype)
@@ -690,7 +694,7 @@ def _full_block(model: ESMC, blk, x, cos, sin, mask, ad, rowmask):
     q = apply_rope(q.view(B, L, h, dh), cos, sin).transpose(1, 2)
     k = apply_rope(k.view(B, L, h, dh), cos, sin).transpose(1, 2)
     v = v.view(B, L, h, dh).transpose(1, 2)
-    o = F.scaled_dot_product_attention(q, k, v, mask)
+    o = F.scaled_dot_product_attention(q, k, v, mask, scale=getattr(model, "attention_scale", dh ** -0.5))
     o = o.transpose(1, 2).reshape(B, L, d)
     o = _add(attn.out_proj(o), _delta(ad, "o", o, rowmask))
     x = x + o / blk.scaling_factor
