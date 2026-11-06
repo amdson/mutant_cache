@@ -1,6 +1,6 @@
 # Mutate Everything tuning — live status
 
-Updated 2026-11-06T00:52:20.474830+00:00.
+Updated 2026-11-06T00:57:11.053134+00:00.
 
 Selection uses internal validation only. All trials save separate RMSE, Spearman, double-Spearman and nDCG@30 checkpoints. Screening seed is 0; confirmation seeds are 1/2.
 
@@ -8,8 +8,8 @@ Selection uses internal validation only. All trials save separate RMSE, Spearman
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | A00 | E02 control | completed | 0 | 2 | 4500 | 0.8542 | 0.8786 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_accuracy_v2/runs/A00/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_accuracy_v2/runs/A00/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/4e09c83527744911) |
 | R01 | MSE plus within-depth rank weight 0.1 | completed | 0 | 0 | 4500 | 0.8549 | 0.8770 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_accuracy_v2/runs/R01/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_accuracy_v2/runs/R01/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/a02ebec6c88744b7) |
-| R02 | MSE plus within-depth rank weight 0.3 | running | 0 | 2 | 3450 | — | — | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_accuracy_v2/runs/R02/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_accuracy_v2/runs/R02/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/c922694e011d4c8b) |
-| R03 | MSE plus within-depth rank weight 1.0 | running | 0 | 0 | 3350 | — | — | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_accuracy_v2/runs/R03/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_accuracy_v2/runs/R03/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/e4e680d9598a4278) |
+| R02 | MSE plus within-depth rank weight 0.3 | running | 0 | 2 | 3700 | — | — | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_accuracy_v2/runs/R02/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_accuracy_v2/runs/R02/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/c922694e011d4c8b) |
+| R03 | MSE plus within-depth rank weight 1.0 | running | 0 | 0 | 3600 | — | — | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_accuracy_v2/runs/R03/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_accuracy_v2/runs/R03/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/e4e680d9598a4278) |
 | I01 | Additive singles plus zero-initialized interaction residual | planned | 0 |  |  | — | — |  |
 | S01 | Shared rank 16, scaling 2 | planned | 0 |  |  | — | — |  |
 | S02 | Shared rank 32, scaling 2 | planned | 0 |  |  | — | — |  |
