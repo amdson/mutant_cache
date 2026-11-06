@@ -136,4 +136,4 @@ pinned-down semantics (`mutant_cache/backbone/esmc.py`, `mutant_cache/cache/`):
 - **Exact backend** (`forward_variants_exact`, same signature as the bruteforce oracle): the full
   forward of every mutant sequence, nothing clamped — what the cache approximates. Hooks act on
   variant rows as in the oracle. `VariantEffectModel` backends: `cache` | `recompute` (the oracle:
-  same approximation, a numerics check) | `exact` (the PLAN.md 22 accuracy control).
+  same approximation, a numerics check) | `exact` (the [PLAN.md](archive/2026-11-05/PLAN.md) item 22 accuracy control).

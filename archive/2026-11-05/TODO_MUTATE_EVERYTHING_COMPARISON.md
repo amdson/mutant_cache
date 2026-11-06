@@ -10,7 +10,7 @@ pilot comparison is complete: pooled Spearman 0.5427 vs 0.4539, macro Spearman
 joint/additive sweep is complete. Systematic tuning is now running, with
 validation-only selection and separate confirmation seeds. Start with the
 [experiment index](experiments/MUTATE_EVERYTHING_EXPERIMENTS.md) and
-[live tuning status](experiments/mutate_everything_tuning/STATUS.md). See
+[live tuning status](../../experiments/mutate_everything_tuning/STATUS.md). See
 [implementation and commands](experiments/MUTATE_EVERYTHING_COMPARISON.md).
 Run details and pinned data hashes:
 [first pilot](experiments/MUTATE_EVERYTHING_PILOT_LAUNCH.md).

@@ -10,4 +10,10 @@ Keep the journal updated with concise dated entries after meaningful experiments
 results or changes in research direction. Distinguish internal validation from
 external test results, and completed measurements from planned work.
 
+For the repository map and experiment states see [README.md](README.md) and
+[experiments/INDEX.md](experiments/INDEX.md); module contracts are in
+[INTERFACES.md](INTERFACES.md). Superseded plans, handoffs and completed reports
+(including the original `PLAN.md`) are under [archive/](archive/README.md) and are
+history, not current configuration.
+
 Also follow the repository conventions in [CLAUDE.md](CLAUDE.md).

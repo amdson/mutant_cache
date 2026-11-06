@@ -1,0 +1,16 @@
+{
+  "id": "msr_esm2_v1",
+  "question": "Test the E02-style ESM-2 recipe on the released ESM-MSR development partition",
+  "protocol": "../../../datasets/protocols/esm_msr_v1.json",
+  "recipe": "../../recipes/esm2_650m_shared.json",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "training": {
+    "eval_protein_col": "code_wt",
+    "eval_min_n": 2
+  },
+  "notes": "Proposed experiment, not a completed ESM-MSR comparison. Validate recipe selection internally; upstream external prediction matching remains separate work. Eval grouping (code_wt, min_n 2) matches archive/2026-11-05/experiments/esm_msr_tune_s1_lr.sh."
+}

@@ -1,0 +1,26 @@
+{
+  "id": "stabilityarc_v1",
+  "status": "planned",
+  "description": "Planned comparison against standalone StabilityArc under its released outer protein holdouts. No data, importer, splits or evaluator exist in this repository yet.",
+  "training": null,
+  "build": "make -C datasets stabilityarc (fails while planned, listing what is needed)",
+  "source": {
+    "upstream": null,
+    "commit": null,
+    "data_release": null
+  },
+  "needed": [
+    "Pin the source release: upstream code commit and data archive version + checksum, with license/terms.",
+    "Importer to $MUTANT_CACHE_SCRATCH/processed/<dataset> with manifest/provenance and a make target.",
+    "Released outer protein holdout memberships, materialized as split parquet(s) without modification.",
+    "Development-only model-selection protocol (inner partition of the training proteins; outer holdouts untouched until configurations are frozen).",
+    "Overlap and label audit: exact-sequence and homology overlap across partitions and against other training sets; sign/unit conventions.",
+    "Reproduction of the upstream StabilityArc evaluation (metrics, grouping, rows) on identical rows before any matched comparison."
+  ],
+  "eval_panels": null,
+  "metrics": null,
+  "notes": [
+    "mutant_cache.training.resolve_config rejects this protocol (status != ready); the launcher must not substitute another dataset.",
+    "Fill training.dataset / training.split only after the importer and released holdouts exist."
+  ]
+}

@@ -8,15 +8,28 @@ Tsuboyama would look spuriously unrelated to everything.
 
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
-MMSEQS = "/home/andrew/MMseqs2/build/bin/mmseqs"
+
+def _default_mmseqs() -> str:
+    """``~/MMseqs2/build/bin/mmseqs`` if built there (the original setup),
+    else ``mmseqs`` on PATH."""
+    built = Path.home() / "MMseqs2" / "build" / "bin" / "mmseqs"
+    if built.exists():
+        return str(built)
+    return shutil.which("mmseqs") or "mmseqs"
+
+
+# Override with the MMSEQS environment variable (a path or a command on PATH).
+MMSEQS = os.environ.get("MMSEQS") or _default_mmseqs()
 
 
 def available() -> bool:
-    return Path(MMSEQS).exists()
+    return Path(MMSEQS).exists() or shutil.which(MMSEQS) is not None
 
 
 def write_fasta(path: Path, records) -> None:

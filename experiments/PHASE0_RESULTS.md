@@ -1,12 +1,12 @@
 # Phase 0 go/no-go: does the sparse variant cache work on a protein LM?
 
-PLAN.md items 4 (degradation) and 5 (runtime). Backbone/cache correctness was
+[PLAN.md](../archive/2026-11-05/PLAN.md) items 4 (degradation) and 5 (runtime). Backbone/cache correctness was
 settled separately (exact equivalence against the official `esm` package;
 efficient vs bruteforce agreement ~1e-6 in fp32), so everything below is about
 the *approximation*, not about bugs.
 
-Scripts: `experiments/phase0_degradation.py`, `experiments/phase0_runtime.py`,
-`experiments/phase0_figs.py`. Raw CSVs and logs next to them, figures in
+Scripts: [`experiments/phase0_degradation.py`](../archive/2026-11-05/experiments/phase0_degradation.py), [`experiments/phase0_runtime.py`](../archive/2026-11-05/experiments/phase0_runtime.py),
+[`experiments/phase0_figs.py`](../archive/2026-11-05/experiments/phase0_figs.py) (archived under `archive/2026-11-05/experiments/`). Raw CSVs and logs next to them, figures in
 `experiments/figs/`. Model: ESM-C 300M, one RTX A6000, `CUDA_VISIBLE_DEVICES=0`.
 
 **Verdict: GO, with conditions.** The cache is 12-32x faster than full
@@ -14,7 +14,7 @@ re-forwarding at the mutation depths real DMS data actually has, and at those
 depths it reproduces the exact masked-marginal ranking at Spearman 0.92-0.998.
 It falls apart at high *mutation density*, not high mutation count, which means
 the binding constraint is short proteins, not deep mutants — and every dataset in
-DATASETS.md sits below density 0.07. See "What this means for Phase 3" for the
+[DATASETS.md](../archive/2026-11-05/DATASETS.md) sits below density 0.07. See "What this means for Phase 3" for the
 six design consequences, the important ones being: do not mean-pool the sequence
 for the reference summary, keep the additive head so the learned part can absorb
 a per-target bias, and chunk the variant batch before training on deep mutants.
@@ -269,7 +269,7 @@ SDPA while the cache's attention core is explicit fp32 matmuls, and at large K t
 cache does strictly more work than a plain forward (a self- *and* a cross-
 attention, merged by log-sum-exp). So the bf16 break-even density of ~0.2-0.5 is
 partly an implementation artifact and could be pushed out with a fused kernel.
-It does not matter for this project: every dataset in DATASETS.md sits far below
+It does not matter for this project: every dataset in [DATASETS.md](../archive/2026-11-05/DATASETS.md) sits far below
 these densities. Tsuboyama Megascale (the processed table here: 479 domains,
 32-74 aa, median 56) has a maximum density of 0.0625 and a 99th percentile of
 0.051; FLIP GB1 is 4 sites on 56 aa (0.071); avGFP Sarkisyan averages 3.7
@@ -354,7 +354,7 @@ variant-batch chunker or activation recompute before it can touch deep mutants.
    targets a few hundred GB.
 6. **Chunk the variant batch in the trainer.** Forward is fine; the backward's
    fp32 attention scores are O(N*h*K*L) and reach 24 GB at N=128, K=50, L=512.
-   A chunk rule of N*K <= ~16384 (what `phase0_runtime.py` uses) keeps the
+   A chunk rule of N*K <= ~16384 (what [`phase0_runtime.py`](../archive/2026-11-05/experiments/phase0_runtime.py) uses) keeps the
    forward under 2.6 GB; the backward needs something tighter or recompute.
 
 ### Honest caveats
@@ -380,7 +380,7 @@ variant-batch chunker or activation recompute before it can touch deep mutants.
 
 ## Experiment 3 — clustered mutations (follow-up; corrects the density claim)
 
-`experiments/phase0_clustered.py`. Experiments 1 and 2 drew mutated positions
+[`experiments/phase0_clustered.py`](../archive/2026-11-05/experiments/phase0_clustered.py). Experiments 1 and 2 drew mutated positions
 uniformly at random. Real libraries do not: FLIP GB1 varies V39/D40/G41/V54,
 three of them adjacent, and combinatorial designs pick interacting residues
 almost by construction. This compares, at matched K, uniform-random positions

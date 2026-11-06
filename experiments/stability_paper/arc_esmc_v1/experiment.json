@@ -1,0 +1,9 @@
+{
+  "id": "arc_esmc_v1",
+  "question": "Compare sparse ESMC-600M adaptation with standalone StabilityArc under matched protein holdouts",
+  "protocol": "../../../datasets/protocols/stabilityarc_v1.json",
+  "recipe": "../../recipes/esmc_600m_shared.json",
+  "seeds": [0, 1, 2],
+  "training": {},
+  "notes": "Planned only: importer, released fold membership, model-selection protocol and matched evaluation still need implementation."
+}

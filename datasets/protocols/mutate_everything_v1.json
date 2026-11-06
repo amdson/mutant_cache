@@ -1,0 +1,49 @@
+{
+  "id": "mutate_everything_v1",
+  "status": "ready",
+  "description": "Mutate Everything cDNA stability data with our internal protein-level development split (104 train / 12 val proteins from the released cdna_train set); the released cDNA2 test set is held out and unread during development.",
+  "training": {
+    "dataset": "mutate_everything_cdna",
+    "split": "mutate_everything_cdna"
+  },
+  "build": "make -C datasets mutate-everything",
+  "processed_dir": "$MUTANT_CACHE_SCRATCH/processed/mutate_everything_cdna",
+  "source": {
+    "upstream": "https://github.com/jozhang97/MutateEverything",
+    "commit": "034dd91e7a449e68b0f0993043bd32ce281f056c",
+    "data_archive": "Google Drive id 1akfHt1WLbC345DgZwZ5kLeMUADq9XB7y (mutate_everything_data.zip)",
+    "data_archive_sha256": "4e4a579902db8308196f4c1bf0fed25ee31b1573c28613525ff2f3def2350f9f",
+    "files": {
+      "train": "mutate_everything/data/cdna_train.csv (sha256 1d1c901f940a207872f0c554237cb24c077118dad81c55ca6b979bc7d401bc5b)",
+      "test": "mutate_everything/data/cdna2_test.csv (sha256 e82b937c0d9f2d05c01951a95221b5494086b13aa341e0e31237c5d3c8afdb25)"
+    }
+  },
+  "labels": {
+    "upstream_sign": "ddg positive = destabilizing",
+    "canonical": "score = WT-relative ddG, positive = stabilizing; replicate measurements reduced by median"
+  },
+  "partitions": {
+    "train": {"proteins": 104, "rows": 191922},
+    "val": {"proteins": 12, "rows": 18920, "policy": "10% of released-train sequence groups, numpy seed 0; identical sequences kept together. Our validation policy, not an upstream split."},
+    "test": {"proteins": 18, "rows": 21933, "policy": "released cDNA2 test, immutable; read only after configurations are frozen (--final-test)"}
+  },
+  "alternate_splits": {
+    "mutate_everything_cdna_holdout1": "same development proteins re-split with seed 1 (first written by experiments/start_mutate_everything_accuracy_v2.py; rebuilt by make -C datasets mutate-everything-holdouts); sensitivity check, not an independent test",
+    "mutate_everything_cdna_holdout2": "same, seed 2"
+  },
+  "eval_panels": {
+    "cdna2": "processed/mutate_everything_cdna/comparison_labels_test.csv (21933 rows)",
+    "cdna1": "mutate_everything/external/cdna1_labels.csv",
+    "s669": "mutate_everything/external/s669_labels.csv",
+    "ptmul": "mutate_everything/external/ptmul_labels.csv (ProTherm multiple)",
+    "s669_reverse": "mutate_everything/external/s669_reverse_labels.csv (uncalibrated reverse diagnostic)"
+  },
+  "metrics": {
+    "selection": "validation only (macro overall Spearman or doubles RMSE, per the experiment's declared --selection rule)",
+    "external": "per experiments/stability_paper/me_esm2_v1/comparison.json via mutant_cache.matched_suite; published reproduction checks: cDNA2 nDCG@30 0.38, S669 Spearman 0.47"
+  },
+  "notes": [
+    "This is the E02 development protocol. The completed full-116-protein fixed-final comparison (experiments/mutate_everything_full_comparison/) merged train+val and is a different training membership.",
+    "Exact-sequence overlap against ESM-MSR splits is audited (manifest.json external_sign_audit); the MMseqs2 identity ceiling reported upstream is not verified (identity_ceiling_verified=false)."
+  ]
+}

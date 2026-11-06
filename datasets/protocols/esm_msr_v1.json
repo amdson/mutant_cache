@@ -1,0 +1,43 @@
+{
+  "id": "esm_msr_v1",
+  "status": "ready",
+  "description": "ESM-MSR's Megascale (Tsuboyama 2023 Dataset 2+3) preprocessing reproduced from the released archive, with the released hyperopt_splits protein partition (train / val / internal test by code_wt; engineered backgrounds inherit their parent's partition).",
+  "training": {
+    "dataset": "esm_msr_mega",
+    "split": "esm_msr_hyperopt"
+  },
+  "build": "make -C datasets esm-msr",
+  "processed_dir": "$MUTANT_CACHE_SCRATCH/processed/esm_msr_mega",
+  "source": {
+    "upstream": "https://github.com/SKTeamLab/esm-msr",
+    "commit": "c34c315913b539070095b8af63b4bd7fbcd503b7",
+    "data_archive": "Zenodo 10.5281/zenodo.21539277 v0.1 (2026-06-04, MIT), preprocessed_data.tar.gz",
+    "data_archive_md5": "56ae9af3f800065b7a7ff4f4a42b7b92",
+    "source_csv": "esm_msr/preprocessed/data/tsuboyama/Tsuboyama2023_Dataset2_Dataset3_20230416.csv (md5 5810ab153d292af2c71cdf9af572c040)",
+    "split_file": "esm_msr/repo/data/hyperopt_splits.csv (sha1 44719a01088c1e0854894f84ba427cf1866e5d87)",
+    "preprint": "10.64898/2026.06.04.730231",
+    "upstream_data": "Tsuboyama et al. 2023, Zenodo 7844779, CC-BY-4.0"
+  },
+  "labels": {
+    "canonical": "score = raw ddG_ML kcal/mol, WT-relative, positive = stabilizing; duplicates averaged; no WT rows"
+  },
+  "partitions": {
+    "train": {"code_wt": 120, "targets": 127, "rows": 183379},
+    "val": {"code_wt": 26, "targets": 26, "rows": 35373},
+    "test": {"code_wt": 34, "targets": 36, "rows": 43700, "singles": 32968, "doubles": 10732, "policy": "released internal test; read only after configurations are frozen (--final-test)"}
+  },
+  "eval_panels": {
+    "test_internal": "esm_msr_hyperopt split == 'test' (reconciles with the paper's 43,700 / 32,968 / 10,732 counts)",
+    "external_not_imported": "ptmuld, s461, ssym (upstream validation metric) are not imported"
+  },
+  "metrics": {
+    "selection": "validation only (development experiments use the experiment's declared --selection rule)",
+    "upstream": "per-protein Spearman grouped by code_wt over singles+doubles pooled, safe_spearman min_n=2, nDCG@96 (compute_ndcg_flexible) and ndcg_t0; mirrored in mutant_cache/eval/megascale.py but not yet verified to reproduce upstream reported numbers"
+  },
+  "notes": [
+    "status=ready covers training on the released development partition only.",
+    "A matched external comparison is UNRESOLVED: paper checkpoint provenance (HuggingFace checkpoints not downloaded; bundled esm-msr-small is not the paper model), row mapping (upstream drops mismatching constituents; target_id vs code_wt grouping), metric reproduction, and training-overlap audit of their checkpoint are all open.",
+    "mutant_cache.matched_suite is specialized to Mutate Everything and must not be used as an ESM-MSR evaluator.",
+    "Not reproduced: upstream reversion/mut_ctx augmentation, 2-D double rebalancing in their sampler."
+  ]
+}

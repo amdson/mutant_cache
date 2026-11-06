@@ -2,8 +2,11 @@
 
 Sparse variant KV-cache for protein language models: cache one reference
 sequence's per-layer states, then recompute only the mutated positions for
-thousands of mutants. See PLAN.md for the work list and INTERFACES.md for the
-contracts between modules.
+thousands of mutants. For current work see [README.md](README.md),
+[experiments/INDEX.md](experiments/INDEX.md) and the
+[research journal](experiments/RESEARCH_JOURNAL.md); [INTERFACES.md](INTERFACES.md)
+holds the contracts between modules. The original work list is archived at
+[archive/2026-11-05/PLAN.md](archive/2026-11-05/PLAN.md) (history only).
 
 ## Conventions
 

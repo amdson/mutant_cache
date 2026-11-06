@@ -1,0 +1,608 @@
+{
+  "format": 1,
+  "rules": {
+    "table": "pandas read (parquet: pyarrow; csv: float_precision=round_trip); columns sorted by name; header [(column, int<bits>|float<bits>|bool|str)]; rows as JSON arrays (float repr exact, null for None/NaN); rows sorted; sha256(header + sorted rows)",
+    "json": "json.load, re-dumped with sort_keys=True, separators=(',', ':'), ensure_ascii=True",
+    "bytes": "sha256 of the file bytes",
+    "paths": "strings starting with the scratch root (literal or realpath) -> $MUTANT_CACHE_SCRATCH/...; no fields dropped; none of these files carry timestamps",
+    "rounded_sha256": "same as content_sha256 with floats formatted '%.10g' (diagnostic only)",
+    "ordered_sha256": "table hash without sorting rows (row order; informational only)",
+    "unstable": "files listed with an 'unstable' reason are reported, not failed, on mismatch (--strict fails them)"
+  },
+  "round_sig": 10,
+  "groups": {
+    "mutate-everything-raw": {
+      "mutate_everything/mutate_everything_data.zip": {
+        "kind": "bytes",
+        "sha256": "4e4a579902db8308196f4c1bf0fed25ee31b1573c28613525ff2f3def2350f9f"
+      },
+      "mutate_everything/data/cdna_train.csv": {
+        "kind": "bytes",
+        "sha256": "1d1c901f940a207872f0c554237cb24c077118dad81c55ca6b979bc7d401bc5b"
+      },
+      "mutate_everything/data/cdna2_test.csv": {
+        "kind": "bytes",
+        "sha256": "e82b937c0d9f2d05c01951a95221b5494086b13aa341e0e31237c5d3c8afdb25"
+      }
+    },
+    "mutate-everything": {
+      "processed/mutate_everything_cdna/targets.parquet": {
+        "kind": "table",
+        "rows": 134,
+        "columns": [
+          "sequence",
+          "source",
+          "target_id",
+          "uniprot"
+        ],
+        "content_sha256": "85233d92149f2256ca40bae0bf3d1a68a5bad7161107d501222022793932b3c6",
+        "rounded_sha256": "85233d92149f2256ca40bae0bf3d1a68a5bad7161107d501222022793932b3c6",
+        "ordered_sha256": "a251e21820dfa588d3832c2d147aacc185161e74b6836d39d575fa2354eafffb"
+      },
+      "processed/mutate_everything_cdna/variants.parquet": {
+        "kind": "table",
+        "rows": 232775,
+        "columns": [
+          "assay_type",
+          "mutant",
+          "n_mut",
+          "score",
+          "score_rank",
+          "score_se",
+          "score_set_id",
+          "target_id"
+        ],
+        "content_sha256": "09188891629d04fedebd60a4d5bed3d2afd367fbede8d5e91f89f1e8df2fcb62",
+        "rounded_sha256": "b8bbff596b48c7b5d74fd3378a395c8e94ea67faf14e15e51ac7ea44bf6dd39f",
+        "ordered_sha256": "7933c68fa02dfd11f5fd3663ee1a4da9528a737d4407783d6e8cc7409a11b557"
+      },
+      "processed/mutate_everything_cdna/score_sets.parquet": {
+        "kind": "table",
+        "rows": 134,
+        "columns": [
+          "assay_type",
+          "license",
+          "max_n_mut",
+          "n_variants",
+          "reliability",
+          "score_set_id",
+          "target_id"
+        ],
+        "content_sha256": "6595571325fc5d0e680ad8c979e9c9bfdd6d65d2e85be67e566671e05398a62e",
+        "rounded_sha256": "6595571325fc5d0e680ad8c979e9c9bfdd6d65d2e85be67e566671e05398a62e",
+        "ordered_sha256": "c8ba982ceedb7e8679b44d3d11e3cdb56fda74e87655975bba0b555aa2d8f4a7"
+      },
+      "processed/mutate_everything_cdna/wt_report.parquet": {
+        "kind": "table",
+        "rows": 134,
+        "columns": [
+          "mismatch_rate",
+          "n_out_of_range",
+          "n_sub",
+          "n_sub_mismatch",
+          "n_variants",
+          "rate_after_offset",
+          "suggested_offset",
+          "target_id"
+        ],
+        "content_sha256": "03b792835635013130875555d7ab1e86c30974a178db7e1567bd1bfb100ba712",
+        "rounded_sha256": "4563a58e7e530c732b5dcbd59a6325cdade99d2085c378f0f51fabb02e647a53",
+        "ordered_sha256": "54314d6a72a973083d641b078a2f1ea7ab86b21ce28198b64127ea31e95d79b6"
+      },
+      "processed/mutate_everything_cdna/splits/mutate_everything_cdna.parquet": {
+        "kind": "table",
+        "rows": 134,
+        "columns": [
+          "split",
+          "target_id"
+        ],
+        "content_sha256": "a9b2d64dd0f63a82c15cbb13ba11e98dc62e696e45bcc5a18f43da45cfa12779",
+        "rounded_sha256": "a9b2d64dd0f63a82c15cbb13ba11e98dc62e696e45bcc5a18f43da45cfa12779",
+        "ordered_sha256": "7b5cf4e094845a9a4b0255aa968c4a45f980b9b1ed8a618285d8a5085e7a0229"
+      },
+      "processed/mutate_everything_cdna/exclusions_train.csv": {
+        "kind": "table",
+        "rows": 0,
+        "columns": [
+          "mutant",
+          "reason",
+          "source_row",
+          "target_id"
+        ],
+        "content_sha256": "b39903199ecc54facbd51e190a62a4521a15a88bacdfae464755c28b846602a3",
+        "rounded_sha256": "b39903199ecc54facbd51e190a62a4521a15a88bacdfae464755c28b846602a3",
+        "ordered_sha256": "b39903199ecc54facbd51e190a62a4521a15a88bacdfae464755c28b846602a3"
+      },
+      "processed/mutate_everything_cdna/exclusions_test.csv": {
+        "kind": "table",
+        "rows": 0,
+        "columns": [
+          "mutant",
+          "reason",
+          "source_row",
+          "target_id"
+        ],
+        "content_sha256": "b39903199ecc54facbd51e190a62a4521a15a88bacdfae464755c28b846602a3",
+        "rounded_sha256": "b39903199ecc54facbd51e190a62a4521a15a88bacdfae464755c28b846602a3",
+        "ordered_sha256": "b39903199ecc54facbd51e190a62a4521a15a88bacdfae464755c28b846602a3"
+      },
+      "processed/mutate_everything_cdna/comparison_labels_train.csv": {
+        "kind": "table",
+        "rows": 210842,
+        "columns": [
+          "mutant",
+          "n_mut",
+          "score",
+          "target_id",
+          "wt_seq"
+        ],
+        "content_sha256": "432487602df51aea15de350249e7104cebef7baea300fb9ff1f8f852f49ba2ca",
+        "rounded_sha256": "404c8823ed9d622939943b21a6fc973af3bc2b3dc5e1b20b707b26a992366a28",
+        "ordered_sha256": "58ab12d6bb0d24f0a245289778cc6b14a444d377b50bd4857bd32990cb2b4493"
+      },
+      "processed/mutate_everything_cdna/comparison_labels_test.csv": {
+        "kind": "table",
+        "rows": 21933,
+        "columns": [
+          "mutant",
+          "n_mut",
+          "score",
+          "target_id",
+          "wt_seq"
+        ],
+        "content_sha256": "7780284e85dcb37b9bfddcd5262efd8eb4c05b75bc2024553bf1a74d9d68b63b",
+        "rounded_sha256": "34fedc28f2e98ba1c20ea11f45726a388b7f93c63b64667b83f4de6b02d6d09a",
+        "ordered_sha256": "9fa0af2778f1deafc62939abba98370c16364c437d5f45b82c957315a8a51756"
+      },
+      "processed/mutate_everything_cdna/external_overlap.csv": {
+        "kind": "table",
+        "rows": 65,
+        "columns": [
+          "external_split",
+          "external_target",
+          "our_split",
+          "our_target",
+          "split_file"
+        ],
+        "content_sha256": "9ccb3dcc25357e604efcfb113139898d0be40dd6c09753e4c1ff101266709976",
+        "rounded_sha256": "9ccb3dcc25357e604efcfb113139898d0be40dd6c09753e4c1ff101266709976",
+        "ordered_sha256": "14f003e9e7bc7c263a6eb03a6c3ba032aae6b8c200db4aad86514ac144e4a94d"
+      },
+      "processed/mutate_everything_cdna/manifest.json": {
+        "kind": "json",
+        "content_sha256": "396d9b7a6b162b1fb3d09b2e46daf5ffb76610b3044fad04ca72b9cc31fd9a13",
+        "rounded_sha256": "acfa9ebcefabea6ccb76cd42e074b3b7248289644499c2f2eae951bc03176649"
+      }
+    },
+    "mutate-everything-holdouts": {
+      "processed/mutate_everything_cdna/splits/mutate_everything_cdna_holdout1.parquet": {
+        "kind": "table",
+        "rows": 134,
+        "columns": [
+          "split",
+          "target_id"
+        ],
+        "content_sha256": "322900e08c6c4318dd2bda36b2300943cd4319b1724e5c94bd238903b257c041",
+        "rounded_sha256": "322900e08c6c4318dd2bda36b2300943cd4319b1724e5c94bd238903b257c041",
+        "ordered_sha256": "6aa12d117d5f871ef0cecdc3212edbbb1718972d0bcaf5f87db28a0640029738"
+      },
+      "processed/mutate_everything_cdna/splits/mutate_everything_cdna_holdout2.parquet": {
+        "kind": "table",
+        "rows": 134,
+        "columns": [
+          "split",
+          "target_id"
+        ],
+        "content_sha256": "a75e944f36f8ec6b560dc7f6a27041dc54fc52ef1e3d6a156f402648f7ef00f2",
+        "rounded_sha256": "a75e944f36f8ec6b560dc7f6a27041dc54fc52ef1e3d6a156f402648f7ef00f2",
+        "ordered_sha256": "45acf400307038d09ac48d7f52a6496421b845bb3225579b60bc7669bed60b69"
+      }
+    },
+    "mutate-everything-external": {
+      "mutate_everything/external/s669.csv": {
+        "kind": "table",
+        "rows": 669,
+        "columns": [
+          "Unnamed: 0",
+          "ddg",
+          "mut_info",
+          "mut_seq",
+          "pdb_id",
+          "pos",
+          "wt_seq"
+        ],
+        "content_sha256": "280c81465597f0ad5b178c7762a95b8e741ec64aefc08683bc39909c5fb8f2ba",
+        "rounded_sha256": "ed019b32dc4575a3624a0c7caa79997ff9ee412599e607c6454ff8fe4f32591a",
+        "ordered_sha256": "6da27770f736e7f4338df024eea9040b56209bd6f625d6efb5bbf17d80cb3fbd"
+      },
+      "mutate_everything/external/protherm_multiple.csv": {
+        "kind": "table",
+        "rows": 846,
+        "columns": [
+          "DDGun",
+          "DDGun3D",
+          "chain_id",
+          "ddg",
+          "fr1",
+          "fr10",
+          "fr2",
+          "fr3",
+          "fr4",
+          "fr5",
+          "fr6",
+          "fr7",
+          "fr8",
+          "fr9",
+          "mut_fr_list",
+          "mut_info",
+          "mut_info1",
+          "mut_info10",
+          "mut_info2",
+          "mut_info3",
+          "mut_info4",
+          "mut_info5",
+          "mut_info6",
+          "mut_info7",
+          "mut_info8",
+          "mut_info9",
+          "mut_pos_list",
+          "mut_seq",
+          "mut_to_list",
+          "pdb_id",
+          "pos1",
+          "pos10",
+          "pos2",
+          "pos3",
+          "pos4",
+          "pos5",
+          "pos6",
+          "pos7",
+          "pos8",
+          "pos9",
+          "to1",
+          "to10",
+          "to2",
+          "to3",
+          "to4",
+          "to5",
+          "to6",
+          "to7",
+          "to8",
+          "to9",
+          "wt_seq"
+        ],
+        "content_sha256": "0420e0e9f4f2acc96b1a340e1ae091c5db9ab8eafc8911ed6b35a77336c3a2a8",
+        "rounded_sha256": "8660366c3e91fcb4cb522acf3599872c404dc19c02a62087addd6ba356fa3ce0",
+        "ordered_sha256": "243b36f228694187a238b476eb3442e572cac1112abe5320491ba1906ef53efa"
+      },
+      "mutate_everything/external/cdna1_test.csv": {
+        "kind": "table",
+        "rows": 19645,
+        "columns": [
+          "ddg",
+          "fr1",
+          "fr2",
+          "mut_info",
+          "mut_info1",
+          "mut_info2",
+          "mut_seq",
+          "pdb_id",
+          "pos1",
+          "pos2",
+          "to1",
+          "to2",
+          "wt_seq"
+        ],
+        "content_sha256": "4cf1284028ab3dfe26002b329561aa7d565c34be4a3318ad007244a9779a1dec",
+        "rounded_sha256": "b31e8addac204cc86b79629abd20b979df4687807eeefad5904ab441408af825",
+        "ordered_sha256": "332ab587a8dff18d71134b8a6cfb99a427f21bbe28128d93fc7e1017095b3d18"
+      },
+      "mutate_everything/external/s669_labels.csv": {
+        "kind": "table",
+        "rows": 669,
+        "columns": [
+          "mutant",
+          "n_mut",
+          "reference_id",
+          "score",
+          "target_id",
+          "wt_seq"
+        ],
+        "content_sha256": "fb9cacacbcbf8f82d0ac15910f0f0abc26fa03002f8b1cc2d5276c6e2ce9b6bd",
+        "rounded_sha256": "faabe15f0a40ceb02525361dd768d6e7d75268532e1afa3118cd2dcf90fb2d60",
+        "ordered_sha256": "e8d344c6cdeed8be81f01b6ed9ee371da765f2d5d30e440765453ff8082dc936"
+      },
+      "mutate_everything/external/ptmul_labels.csv": {
+        "kind": "table",
+        "rows": 846,
+        "columns": [
+          "mutant",
+          "n_mut",
+          "reference_id",
+          "score",
+          "target_id",
+          "wt_seq"
+        ],
+        "content_sha256": "920d9ad9b48dce83998c3b1b0f8f1313ea5dc7fe6fbd062a3d89acb3d2a22211",
+        "rounded_sha256": "215665d3bdf889c46394fb17c741ddd60cdeb1ca7ac91d9ef7c11980526fb9d6",
+        "ordered_sha256": "71a8877c35a3aba82c8860eb04d4ef0a90f7f129c922cdadc2e441b13284f6ec"
+      },
+      "mutate_everything/external/cdna1_labels.csv": {
+        "kind": "table",
+        "rows": 19645,
+        "columns": [
+          "mutant",
+          "n_mut",
+          "reference_id",
+          "score",
+          "target_id",
+          "wt_seq"
+        ],
+        "content_sha256": "275252a14924dc2e670c190d6a7ee17104bccf84fdfdcf09aa2adf133a5ba1fb",
+        "rounded_sha256": "6661a03ac9ce3d870881860f3ed610a7316d19fa2eaeedbbe51b36599bf6efc2",
+        "ordered_sha256": "a514922776912fa5820984a75a99edadb81e07f68b84ac7687605bfefe511a78"
+      },
+      "mutate_everything/external/s669_reverse_labels.csv": {
+        "kind": "table",
+        "rows": 669,
+        "columns": [
+          "forward_mutant",
+          "mutant",
+          "n_mut",
+          "reference_id",
+          "score",
+          "target_id",
+          "wt_seq"
+        ],
+        "content_sha256": "79b0350a0b872a4f4f8b314901b400d64bddc272bfae65a53d431f52fa5e754f",
+        "rounded_sha256": "90604338a41a23cd519478abda39aa033fc2bb2c5ed131432e53fd6fa8113535",
+        "ordered_sha256": "442a220f0f3e1505ace5b64c06899a643669cf8cf2b908ee86b8c8e651fbd3c8"
+      },
+      "mutate_everything/external/s669_exclusions.csv": {
+        "kind": "table",
+        "rows": 0,
+        "columns": [
+          "mutant",
+          "reason",
+          "source_row",
+          "target_id"
+        ],
+        "content_sha256": "b39903199ecc54facbd51e190a62a4521a15a88bacdfae464755c28b846602a3",
+        "rounded_sha256": "b39903199ecc54facbd51e190a62a4521a15a88bacdfae464755c28b846602a3",
+        "ordered_sha256": "b39903199ecc54facbd51e190a62a4521a15a88bacdfae464755c28b846602a3"
+      },
+      "mutate_everything/external/ptmul_exclusions.csv": {
+        "kind": "table",
+        "rows": 0,
+        "columns": [
+          "mutant",
+          "reason",
+          "source_row",
+          "target_id"
+        ],
+        "content_sha256": "b39903199ecc54facbd51e190a62a4521a15a88bacdfae464755c28b846602a3",
+        "rounded_sha256": "b39903199ecc54facbd51e190a62a4521a15a88bacdfae464755c28b846602a3",
+        "ordered_sha256": "b39903199ecc54facbd51e190a62a4521a15a88bacdfae464755c28b846602a3"
+      },
+      "mutate_everything/external/cdna1_exclusions.csv": {
+        "kind": "table",
+        "rows": 0,
+        "columns": [
+          "mutant",
+          "reason",
+          "source_row",
+          "target_id"
+        ],
+        "content_sha256": "b39903199ecc54facbd51e190a62a4521a15a88bacdfae464755c28b846602a3",
+        "rounded_sha256": "b39903199ecc54facbd51e190a62a4521a15a88bacdfae464755c28b846602a3",
+        "ordered_sha256": "b39903199ecc54facbd51e190a62a4521a15a88bacdfae464755c28b846602a3"
+      },
+      "mutate_everything/external/inventory.json": {
+        "kind": "json",
+        "content_sha256": "34761875dfad8869ef42fd69147e5664962bf27d4c90db34fbd86e606d1119fe",
+        "rounded_sha256": "34761875dfad8869ef42fd69147e5664962bf27d4c90db34fbd86e606d1119fe"
+      }
+    },
+    "esm-msr-raw": {
+      "esm_msr/preprocessed_data.tar.gz": {
+        "kind": "bytes",
+        "sha256": "9c36e94df4ba6c2f035e2c395301ed98f288f6bd95abc20a05c67e97dce22086"
+      },
+      "esm_msr/preprocessed/data/tsuboyama/Tsuboyama2023_Dataset2_Dataset3_20230416.csv": {
+        "kind": "bytes",
+        "sha256": "0c7b2bf1f162122d83d5bb39b901cc446e436b5643684ca268f934be145d8398"
+      },
+      "esm_msr/repo/data/hyperopt_splits.csv": {
+        "kind": "bytes",
+        "sha256": "e3fccc655fd3ec1fa808da22f85f853ad688486b96582f8ddd0b1eb2ada0959d"
+      }
+    },
+    "esm-msr": {
+      "processed/esm_msr_mega/targets.parquet": {
+        "kind": "table",
+        "rows": 189,
+        "columns": [
+          "sequence",
+          "source",
+          "target_id",
+          "uniprot"
+        ],
+        "content_sha256": "d630a4fcd0a45dc25721655e840c11cd24e41f1fc84ab6a4d9bc8bf4aee899a4",
+        "rounded_sha256": "d630a4fcd0a45dc25721655e840c11cd24e41f1fc84ab6a4d9bc8bf4aee899a4",
+        "ordered_sha256": "902b53751918bbb0fe3853616b9e8ebf9932ec53188d5caa2aadda805fd34093"
+      },
+      "processed/esm_msr_mega/variants.parquet": {
+        "kind": "table",
+        "rows": 262452,
+        "columns": [
+          "assay_type",
+          "mutant",
+          "n_mut",
+          "score",
+          "score_rank",
+          "score_se",
+          "score_set_id",
+          "target_id"
+        ],
+        "content_sha256": "eabd23c493ae702036115cd5739a26f23cb728a1a9d7929898679825404bb406",
+        "rounded_sha256": "434bf54af543efacdebeb4eaa94a7945178e779f5ae5a69c8e18cfb164d6a6ee",
+        "ordered_sha256": "df4e9540db74f21c66a07d8268343057dfedcbfdd829277a5687a1c5e136f4f9"
+      },
+      "processed/esm_msr_mega/score_sets.parquet": {
+        "kind": "table",
+        "rows": 189,
+        "columns": [
+          "assay_type",
+          "license",
+          "max_n_mut",
+          "n_variants",
+          "reliability",
+          "score_set_id",
+          "target_id"
+        ],
+        "content_sha256": "4e1944a6129866129a4cef23b1d3ed7ed8383d9180e010ffbede010bc3c542ac",
+        "rounded_sha256": "4e1944a6129866129a4cef23b1d3ed7ed8383d9180e010ffbede010bc3c542ac",
+        "ordered_sha256": "109bc63469cfbdf06f6e0b220f0829f328b5e41d96ef6b5b30922b1703e62eb3"
+      },
+      "processed/esm_msr_mega/wt_report.parquet": {
+        "kind": "table",
+        "rows": 189,
+        "columns": [
+          "mismatch_rate",
+          "n_out_of_range",
+          "n_sub",
+          "n_sub_mismatch",
+          "n_variants",
+          "rate_after_offset",
+          "suggested_offset",
+          "target_id"
+        ],
+        "content_sha256": "d00d8169c8616b9f794eaaad42a3beaf10e670f4d6999d06ed88dce1a311a5fc",
+        "rounded_sha256": "62708583f35e8129bd265ff2f93e71e99e4528f2d0c283417e85bfa3b27d9b9e",
+        "ordered_sha256": "1cada122663272992321d8b3023f0b0f74f66473f3c27670aea8879101368ebb"
+      },
+      "processed/esm_msr_mega/splits/esm_msr_hyperopt.parquet": {
+        "kind": "table",
+        "rows": 189,
+        "columns": [
+          "code_wt",
+          "split",
+          "target_id"
+        ],
+        "content_sha256": "ddab1c36d96ac2a1f383d479e984a35e960b6a5796ed9b8f5576f65f3ab5fb10",
+        "rounded_sha256": "ddab1c36d96ac2a1f383d479e984a35e960b6a5796ed9b8f5576f65f3ab5fb10",
+        "ordered_sha256": "440995ff44c8fb4deda381b4ef047a142ea1662c860e9c6d1118c853b96273fc"
+      },
+      "processed/esm_msr_mega/audit/exclusions.csv": {
+        "kind": "table",
+        "rows": 12,
+        "columns": [
+          "note",
+          "removed",
+          "rows_after",
+          "rows_before",
+          "step"
+        ],
+        "content_sha256": "53ab958f3303f682af4a170335680c4fa51428da2cbf2a4f8f7f4c5093d339ec",
+        "rounded_sha256": "53ab958f3303f682af4a170335680c4fa51428da2cbf2a4f8f7f4c5093d339ec",
+        "ordered_sha256": "9013bd33b2c49dc3afda195a38feadc93f529d5c7c3545ec6a7dc070b7378a16"
+      },
+      "processed/esm_msr_mega/audit/reconstruction_failures.csv": {
+        "kind": "table",
+        "rows": 0,
+        "columns": [
+          "WT_name",
+          "_why",
+          "aa_seq",
+          "code",
+          "code_wt",
+          "ddG_ML",
+          "mut_structure",
+          "mut_type",
+          "mutant"
+        ],
+        "content_sha256": "5cf575983b0afaff7eb7749a941c6d305d8be78baea351bb9b7c7e248e1cdad3",
+        "rounded_sha256": "5cf575983b0afaff7eb7749a941c6d305d8be78baea351bb9b7c7e248e1cdad3",
+        "ordered_sha256": "5cf575983b0afaff7eb7749a941c6d305d8be78baea351bb9b7c7e248e1cdad3"
+      },
+      "processed/esm_msr_mega/audit/split_summary.csv": {
+        "kind": "table",
+        "rows": 3,
+        "columns": [
+          "code",
+          "code_wt",
+          "complete_groups",
+          "ddG_max",
+          "ddG_median",
+          "ddG_min",
+          "ddG_q05",
+          "ddG_q95",
+          "doubles",
+          "doubles_missing_a_single",
+          "frac_stabilizing",
+          "rows",
+          "singles",
+          "split",
+          "unique_reference_sequences"
+        ],
+        "content_sha256": "e29037796b6f99f8f36e421223545b59b77e983867ea9a62fc366039e42557fa",
+        "rounded_sha256": "13eea9fce87a10fec0bbf7c0fcf2ce9a3d6114eebb912c2b6c07f430a54fe654",
+        "ordered_sha256": "e29037796b6f99f8f36e421223545b59b77e983867ea9a62fc366039e42557fa"
+      },
+      "processed/esm_msr_mega/audit/overlap.csv": {
+        "kind": "table",
+        "rows": 3,
+        "columns": [
+          "a",
+          "b",
+          "shared_full_variant_sequences",
+          "shared_reference_sequences"
+        ],
+        "content_sha256": "42aa6721fa05f1a7ad97471bb262202df238fee9a54214e015963bb041260ceb",
+        "rounded_sha256": "42aa6721fa05f1a7ad97471bb262202df238fee9a54214e015963bb041260ceb",
+        "ordered_sha256": "77bba0509b93a866396385e036a3a95cadf0a75c9cb91feded3c3c7f323f1840"
+      },
+      "processed/esm_msr_mega/audit/proteins.csv": {
+        "kind": "table",
+        "rows": 189,
+        "columns": [
+          "code",
+          "code_wt",
+          "doubles",
+          "length",
+          "rows",
+          "singles",
+          "split"
+        ],
+        "content_sha256": "1448b7978e31c5320088841d6825030f522e13b61510f22cd1fbbf5928e34391",
+        "rounded_sha256": "1448b7978e31c5320088841d6825030f522e13b61510f22cd1fbbf5928e34391",
+        "ordered_sha256": "42c15146ff1bbbb2b15af02505e928e579ec51ef24909e7a261d69d07d2ea44a"
+      },
+      "processed/esm_msr_mega/audit/homology_ge30.csv": {
+        "kind": "table",
+        "rows": 86,
+        "columns": [
+          "a",
+          "a_split",
+          "b",
+          "b_split",
+          "identity"
+        ],
+        "content_sha256": "648e02eb08f578d0fd79864e611cfca93891fc79d53454f5042b0b2f872c1537",
+        "rounded_sha256": "648e02eb08f578d0fd79864e611cfca93891fc79d53454f5042b0b2f872c1537",
+        "ordered_sha256": "2f8a4dcde49d6c4af5c77ba260b3c6861e59661b4c092201dcbeb05aaf1da6c5",
+        "unstable": "schema.write_dataset dedups targets with polars unique() without maintain_order, so targets.parquet row order varies run to run; esm_msr.homology_audit keeps the first target per code_wt (drop_duplicates), so the representative sequence (natural domain vs an engineered background) and hence the >=30% pair list vary. Verified 2026-11-05: recomputing on the rebuilt tables in the recorded targets order reproduces the recorded file exactly. Audit only; never used to filter or split."
+      },
+      "processed/esm_msr_mega/audit/provenance.json": {
+        "kind": "json",
+        "content_sha256": "b466ed202fbb89f652836ca48f2685fc7ebcd1460c23ff1cc15f0d512d56b32f",
+        "rounded_sha256": "b466ed202fbb89f652836ca48f2685fc7ebcd1460c23ff1cc15f0d512d56b32f"
+      }
+    }
+  },
+  "not_verified": {
+    "processed/mutate_everything_cdna/sign_and_overlap_audit.json": "no recorded generating script",
+    "processed/mutate_everything_cdna/largest_external_label_differences.csv": "no recorded generating script",
+    "mutate_everything/external/(baseline|ours_joint_s0|report_*|homology|headline.csv|parity_checks.json|driver*)": "evaluation outputs, not data"
+  }
+}

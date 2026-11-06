@@ -23,11 +23,11 @@ learn cache-specific representations.
 
 This section is based on reading the implementation, not executing experiments
 or tests. The main sources are
-[variant_model.py](mutant_cache/models/variant_model.py),
-[variant_cache.py](mutant_cache/cache/variant_cache.py),
-[lora.py](mutant_cache/cache/lora.py),
-[esmc.py](mutant_cache/backbone/esmc.py), and
-[harness.py](mutant_cache/harness.py). Some introductory code comments describe
+[variant_model.py](../../mutant_cache/models/variant_model.py),
+[variant_cache.py](../../mutant_cache/cache/variant_cache.py),
+[lora.py](../../mutant_cache/cache/lora.py),
+[esmc.py](../../mutant_cache/backbone/esmc.py), and
+[harness.py](../../mutant_cache/harness.py). Some introductory code comments describe
 older interfaces; the explanation here follows the current function bodies.
 
 ### Shared computation: a reference stream and mutant streams

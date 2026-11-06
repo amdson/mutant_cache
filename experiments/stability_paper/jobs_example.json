@@ -1,0 +1,7 @@
+{
+  "experiments": [
+    {"experiment": "me_esm2_v1/experiment.json", "seeds": [0, 1, 2]},
+    {"experiment": "msr_esm2_v1/experiment.json", "seeds": [0, 1, 2]}
+  ],
+  "jobs": []
+}

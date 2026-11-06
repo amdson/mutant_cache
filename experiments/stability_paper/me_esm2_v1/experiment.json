@@ -1,0 +1,9 @@
+{
+  "id": "me_esm2_v1",
+  "question": "Develop the E02 sparse recipe on Mutate Everything's internal protein split",
+  "protocol": "../../../datasets/protocols/mutate_everything_v1.json",
+  "recipe": "../../recipes/esm2_650m_shared.json",
+  "seeds": [0, 1, 2],
+  "training": {},
+  "notes": "One seed per CLI launch. Development runs are not the completed full-116 fixed-final refits; comparison.json references those existing frozen fits."
+}

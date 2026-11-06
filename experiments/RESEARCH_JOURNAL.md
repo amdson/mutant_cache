@@ -16,7 +16,7 @@ Added on 2026-11-05 from the earlier work with Claude: git history, dated handof
 - Runtime example on one A6000, bf16, 256 mutants/reference, including reference amortization: length 256, one substitution **326 → 5,167 mutants/s (15.9×)**; length 512 **159 → 5,074 (31.9×)**. Speedups shrink at higher depth and with few variants per reference. These are specific early ESM-C workloads, not a speed comparison with Mutate Everything.
 - Initial verdict: proceed. Low-depth masked-marginal rankings largely agree with full forwards, but approximation errors increase as more reference context becomes incorrect.
 
-Sources: commits `280752c`, `be93e86`, `52552cc`; [raw downloads](phase2_download.sh); [phase-0 results](PHASE0_RESULTS.md), including throughput grids and scripts.
+Sources: commits `280752c`, `be93e86`, `52552cc`; [raw downloads](../archive/2026-11-05/experiments/phase2_download.sh); [phase-0 results](PHASE0_RESULTS.md), including throughput grids and scripts.
 
 ### By 2026-10-21 — Data layer, numerical fixes and clustered-mutation warning
 
@@ -25,7 +25,7 @@ Sources: commits `280752c`, `be93e86`, `52552cc`; [raw downloads](phase2_downloa
 - Wired variant-only and shared LoRA. Established frozen bf16 base / fp32 adapters and heads, with fp32 correctness oracles.
 - A clustered-mutation follow-up qualifies the original density story: **local layout matters**, not just global mutation fraction. PTEN at ten substitutions falls from cache/full LLR Spearman **0.993 scattered → 0.879 contiguous**; the real four-site FLIP GB1 layout gives **0.845** at depth four. Keep full-mutant controls for dense/clustered workloads.
 
-Sources: [October 21 handoff](../HANDOFF.md); fixes/adapters in commits `eeb670f`, `4037d0d` (October 20); clustered follow-up in [phase-0 results](PHASE0_RESULTS.md). The follow-up's exact execution date is not separately recorded here.
+Sources: [October 21 handoff](../archive/2026-11-05/HANDOFF.md); fixes/adapters in commits `eeb670f`, `4037d0d` (October 20); clustered follow-up in [phase-0 results](PHASE0_RESULTS.md). The follow-up's exact execution date is not separately recorded here.
 
 ### 2026-10-21 — First stability benchmark on ThermoMPNN's split
 
@@ -34,7 +34,7 @@ Sources: [October 21 handoff](../HANDOFF.md); fixes/adapters in commits `eeb670f
 - Recorded important interpretation problems: pooled versus macro metrics, label sign/reference conventions, per-assay parameters on unseen proteins, and changing cosine schedules when changing epoch budgets. A trainable-base reference-cache defect was identified; its later fix belongs to the October 29 work below.
 - Decision: first establish fair splits, additive controls and correct training/reference behavior; do not interpret the initial head-only results as demonstrated interaction learning or a paper-level win.
 
-Source: [ThermoMPNN split results](THERMOMPNN_SPLIT_RESULTS.md), explicitly dated October 21.
+Source: [ThermoMPNN split results](../archive/2026-11-05/experiments/THERMOMPNN_SPLIT_RESULTS.md), explicitly dated October 21.
 
 ### 2026-10-24 work, committed October 27 — Ragged execution, fused attention and METL
 
@@ -44,7 +44,7 @@ Source: [ThermoMPNN split results](THERMOMPNN_SPLIT_RESULTS.md), explicitly date
 - Added METL Rosetta/DMS loaders and split conversion. Explicitly checked Rosetta's 1-based versus DMS's 0-based mutation numbering, distinct METL/FLIP GB1 references, unique-genotype split assignment and compiler fallback behavior.
 - GB1 single-task Rosetta total-score pilot reached median test Spearman **~0.955** near 57,600 training examples, then plateaued. **Not a matched METL win:** METL pretraining uses many Rosetta attributes and much more data. This task mismatch motivated scalar DMS comparisons instead.
 
-Sources: [October 24 handoff](../HANDOFF_2026-10-24.md); commit `7461239` (October 27); `ragged_vs_padded_runtime.csv`, `naive_vs_cache_runtime.csv`, `cache_vs_exact_accuracy.csv`, `metl_gb1_scaling.csv`.
+Sources: [October 24 handoff](../archive/2026-11-05/HANDOFF_2026-10-24.md); commit `7461239` (October 27); [`ragged_vs_padded_runtime.csv`](../archive/2026-11-05/experiments/ragged_vs_padded_runtime.csv), [`naive_vs_cache_runtime.csv`](../archive/2026-11-05/experiments/naive_vs_cache_runtime.csv), [`cache_vs_exact_accuracy.csv`](../archive/2026-11-05/experiments/cache_vs_exact_accuracy.csv), [`metl_gb1_scaling.csv`](../archive/2026-11-05/experiments/metl_gb1_scaling.csv).
 
 ### 2026-10-29 — Minimal model, cache lifecycle fixes and DMS learning curves
 
@@ -53,7 +53,7 @@ Sources: [October 24 handoff](../HANDOFF_2026-10-24.md); commit `7461239` (Octob
 - Minimal-model GB1 median Spearman scales from **0.288 at nominal 10 labels** to **0.918 at 1,280** and **0.943 at 2,560**. avGFP remains harder: **0.704 at 2,560**, **0.836 at 20,480**. Published-target columns in those CSVs are contextual references; training/pretraining and source-number provenance must be checked before treating them as matched wins.
 - Lesson: label budget, adaptation scope and readout strongly affect results. Strong performance on simulated Rosetta energies does not establish few-shot experimental fitness performance.
 
-Sources: commits `1bc3ab7`, `2afb59d`; [GB1 table](metl_gb1_dms_h2h_minimal.csv), [avGFP table](metl_avgfp_dms_h2h_minimal.csv); raw DMS launch/diagnostic scripts in this directory.
+Sources: commits `1bc3ab7`, `2afb59d`; [GB1 table](../archive/2026-11-05/experiments/metl_gb1_dms_h2h_minimal.csv), [avGFP table](../archive/2026-11-05/experiments/metl_avgfp_dms_h2h_minimal.csv); raw DMS launch/diagnostic scripts in this directory.
 
 ### 2026-11-01–02 — Implementation audit and controlled head/adapter pilots
 
@@ -63,7 +63,7 @@ Sources: commits `1bc3ab7`, `2afb59d`; [GB1 table](metl_gb1_dms_h2h_minimal.csv)
 - Head pilot: mean **0.688**, mean+count **0.728**, sum+mean+count **0.773**, WT-relative **0.776**. A parameter-matched mutation-only head reached **0.779**, so WT-relative features were not uniquely supported in this task. Chose the simpler sum/mean/count head for subsequent work.
 - Transfer check: sum/mean/count improved avGFP-320 by **+0.211** overall, mostly between mutation depths; GB1-320/1280 effects were near zero. Small pilot results did not justify broad conclusions. The later ESM-2 stability success of WT-relative/shared adaptation is a different task and does not retroactively change this finding.
 
-Source: [implementation pilot results](IMPLEMENTATION_PILOT_RESULTS.md), E0–E4 and linked scripts. Its dated status is November 2; the batch was committed in `4271e9a` on November 4.
+Source: [implementation pilot results](../archive/2026-11-05/experiments/IMPLEMENTATION_PILOT_RESULTS.md), E0–E4 and linked scripts. Its dated status is November 2; the batch was committed in `4271e9a` on November 4.
 
 ### 2026-11-02–04 — Stability-transfer groundwork before Mutate Everything
 
@@ -72,7 +72,7 @@ Source: [implementation pilot results](IMPLEMENTATION_PILOT_RESULTS.md), E0–E4
 - The presence of a final-test script does **not** prove that final ESM-MSR analysis ran. This reconstruction found screen/tuning run directories, but is not recording a completed ESM-MSR final result or a successful distillation/pretraining experiment.
 - The next work moved to the separately released Mutate Everything training/test split and an executable comparator reproduction, documented in the entries below.
 
-Sources: [ESM-MSR plan](../TODO_ESM_MSR_EXPERIMENT.md), [architecture mismatch plan](../TODO_ARCHITECTURE_MISMATCH_PRETRAINING.md), `am0_*`, [ESM-MSR screen selections](esm_msr_select.csv), screen/tuning driver logs; commit `4271e9a` includes this work by November 4.
+Sources: [ESM-MSR plan](../archive/2026-11-05/TODO_ESM_MSR_EXPERIMENT.md), [architecture mismatch plan](../archive/2026-11-05/TODO_ARCHITECTURE_MISMATCH_PRETRAINING.md), `am0_*`, [ESM-MSR screen selections](../archive/2026-11-05/experiments/esm_msr_select.csv), screen/tuning driver logs; commit `4271e9a` includes this work by November 4.
 
 
 ## 2026-11-04 — Establish the comparison and initial baseline
@@ -83,7 +83,7 @@ Sources: [ESM-MSR plan](../TODO_ESM_MSR_EXPERIMENT.md), [architecture mismatch p
 - Historical three-seed joint fits: cDNA2 pooled test Spearman **0.5422**, versus comparator **0.4539**; cDNA2 nDCG **0.3834** versus **0.3792**. Other-panel Spearman trails: cDNA1 **0.7230 vs 0.7478**, S669 **0.4560 vs 0.4736**, ProTherm Multiple **0.3182 vs 0.3918**. These fits trained on only 104 proteins.
 - Implemented joint versus summed-singles scoring and independently trained additive controls. The early cDNA2 gain did not imply broad superiority. Reverse-direction accuracy was especially weak.
 
-References: [comparator reproduction](MUTATE_EVERYTHING_BASELINE.md), [pilot](MUTATE_EVERYTHING_PILOT_COMPARISON.md), [breadth experiments](MUTATE_EVERYTHING_BREADTH_RESULTS.md).
+References: [comparator reproduction](../archive/2026-11-05/experiments/MUTATE_EVERYTHING_BASELINE.md), [pilot](../archive/2026-11-05/experiments/MUTATE_EVERYTHING_PILOT_COMPARISON.md), [breadth experiments](../archive/2026-11-05/experiments/MUTATE_EVERYTHING_BREADTH_RESULTS.md).
 
 ## 2026-11-04–05 — Systematic tuning and regularization
 
@@ -136,6 +136,25 @@ Implemented and launched a separate screen, starting fresh from pretrained weigh
 Primary queue: 11 screen fits plus up to four seed confirmations; then four extra protein-holdout fits. Select using internal validation, inspect doubles/RMSE/retrieval tradeoffs, and confirm across protein splits before declaring another external evaluation round. Keep the completed full-data comparison intact.
 
 References: [round-2 plan and monitoring](mutate_everything_accuracy_v2/README.md), [live status](mutate_everything_accuracy_v2/STATUS.md). Run roots: `scratch/runs/mutate_everything_accuracy_v2`, then `_holdout1` / `_holdout2`.
+
+## 2026-11-05 — Repository reorganization (no new measurements)
+
+**Moved:** 144 superseded plans, handoffs, completed reports and their raw scripts/results into [archive/2026-11-05](../archive/2026-11-05/README.md). Each move is in `moves.json` with its pre-move SHA-256 hash, and all were checked against commit `4f74a31`. The only content edits were relative link targets in three archived markdown files. This includes the raw DMS scripts and the `am0_*`/screen driver logs that earlier entries describe as "in this directory". This journal, `docs/VARIANT_EFFECT_NOTES.md`, `INTERFACES.md`, code, tests and the live round-2 directory stayed in place.
+
+**Added:**
+- `python -m mutant_cache.train`, which runs one seed per launch. It wraps `megascale` and records the resolved config and provenance.
+- Recipes in `experiments/recipes/`. The ESM-2 recipe is the E02 round-2 control base settings; the ESMC recipe has not been run.
+- Protocols in `datasets/protocols/` and `make -C datasets mutate-everything | esm-msr`, which reproduce the existing processed paths. They were checked with `make -n` only and nothing was rebuilt.
+- Experiment records in `experiments/stability_paper/`.
+
+**Still planned, not implemented:**
+- StabilityArc data, import and evaluation. The protocol is marked planned, and both the launcher and the make target reject it.
+- A matched ESM-MSR external comparison (checkpoint provenance, row mapping, metrics).
+- A general evaluator. `matched_suite` remains Mutate Everything–specific.
+
+Raw make rules don't regenerate the holdout1/2 split files or two audit files.
+
+**Checks:** dry-runs resolve for the ME and ESM-MSR experiment definitions, CLI unit tests pass (7), the ME comparison config validates on CPU, and there are 0 broken relative markdown links. No training was launched.
 
 ## Code map
 
