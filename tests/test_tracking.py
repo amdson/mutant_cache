@@ -64,7 +64,8 @@ def test_missing_sdk_is_actionable_before_training(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("config", [dict(wandb_api_key="not-a-credential"),
-    dict(wandb_mode="invalid"), dict(wandb_log_every=0), dict(wandb_tags="bad-tags")])
+    dict(wandb_mode="invalid"), dict(wandb_log_every=0), dict(wandb_tags="bad-tags"),
+    dict(diagnostics="yes"), dict(diagnostic_log_every=0), dict(diagnostic_probe_rows=2.5)])
 def test_invalid_tracking_presets_are_rejected(tmp_path, config):
     path = tmp_path / "config.json"
     path.write_text(json.dumps(config))

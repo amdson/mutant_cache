@@ -1,7 +1,8 @@
 # Implementation and prediction-head improvements
 
-Progress (2026-11-02): §1, §2, §4, E0, E1, E2 done; E3/E4 scripts
-ready, not launched. E3 with V_1e-3 is recommended below. Results and the latent defect:
+Progress (2026-11-02): §1, §2, §4, E0-E4 run (E3 head H2 sum_mean_count chosen; H3 rejected
+by its capacity control; E4 neutral on GB1). bf16 deployment check and E5 not run. Pilot scale
+only — revisit along a label-budget scaling curve before treating any choice as settled. E3 with V_1e-3 is recommended below. Results and the latent defect:
 `experiments/IMPLEMENTATION_PILOT_RESULTS.md`.
 
 ## Immediate experiment recommendation (updated 2026-11-02)
@@ -30,20 +31,20 @@ missing-LoRA-path defect.
 This recommendation resolves which configuration to use for the head comparison;
 it does not authorize or record a launched run. Keep F_1e-5 as historical context.
 
-- [ ] Compare `mean_count`, `sum_mean_count`, and `wt_relative` against the
+- [x] Compare `mean_count`, `sum_mean_count`, and `wt_relative` against the
   existing `mean` baseline, using avGFP nominal budget 1,280, replicates 0/1/2.
   Nine new runs; reuse the three compatible V_1e-3 baseline runs from E2.
-- [ ] Freeze training settings: ESM-C 300M, sparse ragged execution, fp32,
+- [x] Freeze training settings: ESM-C 300M, sparse ragged execution, fp32,
   variant LoRA r8/alpha16, targets q/o/gate/up/down, adapter LR 1e-3,
   head LR 3e-3, uniform RankNet on raw score, AdamW wd 0.01, clip 1,
   batch 256, 400 optimizer steps, cosine schedule and the same resolved
   40-step warmup as E2. The script requests warmup 50; the harness caps it
   at 10% of the step budget. Verify that resolved value in each run record.
-- [ ] Use the existing development manifests: 1,024 train / 256 validation /
+- [x] Use the existing development manifests: 1,024 train / 256 validation /
   5,000 development genotypes. Select by lowest validation rank loss at the
   same 20-step evaluation cadence. Do not select using the METL supertest or
   change the criterion after examining development results.
-- [ ] From the repository root, the existing script's command is:
+- [x] From the repository root, the existing script's command is:
 
   ```bash
   REF=V_1e-3 bash experiments/e3_avgfp_heads.sh
@@ -52,12 +53,12 @@ it does not authorize or record a launched run. Keep F_1e-5 as historical contex
   It uses GPU 0, writes into scratch `runs/pilot_e3`, and skips completed runs.
   Check GPU availability and that any reused results match the current code
   and protocol before execution. Preserve its logs and raw script.
-- [ ] Report each paired head-minus-mean difference, overall AND within depth,
+- [x] Report each paired head-minus-mean difference, overall AND within depth,
   validation curves, selected step, active parameter count, cold time, and peak
   memory. Repeated +0.02–0.03 development Spearman would be encouraging; report
   count-driven gains honestly and do not treat three replicates as a definitive
   significance test.
-- [ ] If WT-relative wins, run the parameter-matched mutation-only projection
+- [x] If WT-relative wins, run the parameter-matched mutation-only projection
   control specified in E3. Then confirm the chosen head on E4's avGFP-320 and
   GB1 tasks. If no head helps consistently, keep the mean head and investigate
   warmup/peak-LR sensitivity as a separate experiment with equal tuning access.
@@ -343,13 +344,13 @@ retune backbone/adapter settings separately for each head in this first pass.
 | H2 | Sum + mean + log1p(k) | Test accumulation-aware readout |
 | H3 | Section-2 WT-relative token projection, sum + mean + count | Test matched WT/mutant information |
 
-- [ ] Implement and validate opt-in choices from section 2. Use 128 hidden
+- [x] Implement and validate opt-in choices from section 2. Use 128 hidden
   units for the final prediction MLP; use a 128-wide token projection and
   16-dimensional ref/alt residue embeddings for H3. Record active parameter
   counts, since equal hidden width does not mean equal parameter count.
-- [ ] Run H1/H2/H3 on replicates 0, 1, 2 (nine new runs); reuse compatible H0
+- [x] Run H1/H2/H3 on replicates 0, 1, 2 (nine new runs); reuse compatible H0
   results from E2. Initialize the pretrained backbone identically across heads.
-- [ ] If H3 wins, add a mutation-only token-projection control of comparable
+- [x] If H3 wins, add a mutation-only token-projection control of comparable
   parameter count to check whether extra head capacity, rather than WT
   information, explains the gain. Preserve the same pooling and training setup.
 - [ ] Recognize that sum = k * mean for k>0: H2 supplies a useful computation
@@ -364,13 +365,13 @@ complexity by default.
 
 ### E4 — Verify the chosen change across data regimes
 
-- [ ] Freeze the selected E2 settings and E3 head. Compare H0 against the chosen
+- [x] Freeze the selected E2 settings and E3 head. Compare H0 against the chosen
   head on avGFP-320, GB1-320, and GB1-1,280, using replicates 0, 1, 2: at most
   18 new runs, less when a fully compatible baseline already exists.
-- [ ] For this transfer check, copy the selected settings without retuning;
+- [x] For this transfer check, copy the selected settings without retuning;
   describe it as robustness to dataset/label-budget changes. If later tuning
   is needed, give H0 and the new head equal validation search access.
-- [ ] Require paired results on the same genotype splits. Show every replicate
+- [x] Require paired results on the same genotype splits. Show every replicate
   and depth bucket, not only the best seed or a pooled mean. Three replicates
   are a pilot; do not present them as a strong cross-protein significance test.
 - [ ] After a LoRA configuration is competitive in fp32, compare its intended

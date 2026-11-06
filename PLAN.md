@@ -2,6 +2,10 @@
 
 Ordered so the go/no-go experiment comes first. Dataset notes: DATASETS.md.
 
+Current implementation follow-up (2026-11-01): see [TODO.md](TODO.md) for
+LoRA correctness/optimization checks and the opt-in mutation-aware prediction
+head. The phases below are the historical project roadmap.
+
 ## Phase 0 — port + validate cache on a protein LM (go/no-go)
 1. Hackable ESM-C 300M reimplementation (`mutant_cache/backbone`), numerically matching the official `esm` package. ESM-2 650M fallback.
 2. Bidirectional variant cache (`mutant_cache/cache`): variant queries attend to {ref keys at non-variant positions} ∪ {variant keys}; two attentions merged by log-sum-exp; reference kept at batch 1; RoPE per absolute position; QK-norm on both streams.

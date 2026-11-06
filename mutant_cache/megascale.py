@@ -56,6 +56,7 @@ from mutant_cache.harness import (
 from mutant_cache.models import VariantEffectModel, build_variant_batches
 from mutant_cache.models.data_compat import apply_split, load_split, load_tables
 from mutant_cache.tracking import ExperimentTracker, add_tracking_args
+from mutant_cache.diagnostics import TrainingDiagnostics, add_diagnostic_args
 
 
 # ── data ──────────────────────────────────────────────────────────────────────
@@ -91,6 +92,14 @@ def prepare(args) -> dict:
     if args.max_val_proteins:
         keep = sorted(prots["val"])[:args.max_val_proteins]
         parts["val"] = parts["val"][parts["val"]["target_id"].isin(keep)]
+    if getattr(args, "full_train_refit", False):
+        if (not args.final_eval_only or args.patience or args.load_trainable
+                or args.max_train_variants or args.max_val_proteins
+                or getattr(args, "save_selection_rules", [])):
+            raise ValueError("full-train refit requires fresh, uncapped, final-eval-only training without early stopping or selection rules")
+        parts["train"] = pd.concat([parts["train"], parts["val"]], ignore_index=True)
+        # Retained solely as an explicitly in-sample diagnostic, never a holdout.
+        print("FULL TRAIN REFIT: former validation proteins included in training; val/* metrics are IN-SAMPLE diagnostics only", flush=True)
     seqs = dict(zip(t["targets"]["target_id"], t["targets"]["sequence"]))
     split_file = next((c for c in (d / "splits" / f"{args.split}.parquet",
                                    scratch_root() / "processed" / "splits" / f"{args.split}.parquet")
@@ -303,7 +312,11 @@ def _run(args, run_dir, tracker) -> dict:
         huber_delta=1., single_weight=1., double_weight=1., stabilizing_double_weight=1.,
         task_reduction="rows", double_subsample_ratio=0., single_only_exposures=0.,
         reference_augmentation="none", augmentation_fraction=.25, backgrounds_per_protein=4).items()}
-    weighted_loss = args.loss == "huber_dg" or any((protocol["single_weight"] != 1.,
+    ranking_weight = getattr(args, 'stability_rank_weight', 0.)
+    if ranking_weight < 0:
+        raise ValueError('ranking weight must be nonnegative')
+    protocol['stability_rank_weight'] = ranking_weight
+    weighted_loss = ranking_weight > 0 or args.loss == "huber_dg" or any((protocol["single_weight"] != 1.,
         protocol["double_weight"] != 1., protocol["stabilizing_double_weight"] != 1.,
         protocol["task_reduction"] != "rows"))
     if weighted_loss and args.loss not in ("mse_dg", "huber_dg"):
@@ -316,6 +329,10 @@ def _run(args, run_dir, tracker) -> dict:
     if augmentor is not None:
         augmentor.audit.to_csv(run_dir / "training_reference_bank.csv", index=False)
     (run_dir / "training_protocol.json").write_text(json.dumps(protocol, indent=2))
+    diagnostics = TrainingDiagnostics(args, run_dir, tracker)
+    diagnostics.prepare(model, tr, seqs, aa, bkw, ebs, device, lossfn, opt.param_groups)
+    diagnostics.total_steps = total
+    augmented_ids = set() if augmentor is None else set(augmentor.sequences)
     history, best, best_state = [], None, None
     selection_bests = {}
     tracked_rules = list(dict.fromkeys([args.selection] + list(getattr(args, "save_selection_rules", []))))
@@ -365,6 +382,7 @@ def _run(args, run_dir, tracker) -> dict:
         (run_dir / "selection_checkpoints.json").write_text(json.dumps(selection_bests, indent=2))
         tracker.validation(row)
         tracker.selections(selection_bests)
+        diagnostics.evaluate(step, exposure, pv, es["eval"])
         model.train()
         _sync()
         t_eval += time.perf_counter() - t0
@@ -381,6 +399,7 @@ def _run(args, run_dir, tracker) -> dict:
     _sync()
     t0 = time.perf_counter()
     for step in range(total):
+        diagnostics.begin_step(step+1, total)
         s = lr_scale(step, total, args.schedule, warmup)
         for g, lr0 in zip(opt.param_groups, base_lrs):
             g["lr"] = lr0 * s
@@ -389,6 +408,7 @@ def _run(args, run_dir, tracker) -> dict:
             mb = (single_sampler if step < single_steps else sampler).draw()
             if augmentor is not None and step >= single_steps:
                 mb = augmentor.apply(mb)
+            diagnostics.record_batch(mb, augmented_ids)
             for k, n in mb["n_mut"].value_counts().items():
                 exposure_mut[int(k)] = exposure_mut.get(int(k), 0) + int(n)
             bs, _ = build_variant_batches(mb, seqs, aa, batch_size=len(mb), **bkw)
@@ -411,14 +431,30 @@ def _run(args, run_dir, tracker) -> dict:
                     torch.cat(collected_depth), kind=args.loss, delta=protocol["huber_delta"],
                     single_weight=protocol["single_weight"], double_weight=protocol["double_weight"],
                     positive_weight=protocol["stabilizing_double_weight"], reduction=protocol["task_reduction"])
+                if ranking_weight:
+                    from mutant_cache.models.loss import pairwise_rank_loss
+                    if mb.target_id.nunique() != 1 or mb.score_set_id.nunique() != 1:
+                        raise ValueError('stability ranking microbatches must have one protein/assay')
+                    ranks = []
+                    depths = torch.cat(collected_depth)
+                    pred, target = torch.cat(collected_pred), torch.cat(collected_target)
+                    for depth in depths.unique():
+                        mask = depths == depth
+                        if mask.sum() > 1:
+                            ranks.append(pairwise_rank_loss(pred[mask], target[mask]))
+                    if ranks:
+                        l = l + ranking_weight * torch.stack(ranks).mean()
                 (l/args.proteins_per_step).backward()
                 run_loss += float(l.detach())*len(mb)
                 run_n += len(mb)
             seen += len(mb)
+        diagnostics.before_clip(opt.param_groups)
         if args.grad_clip:
-            torch.nn.utils.clip_grad_norm_([p for g in opt.param_groups for p in g["params"]],
-                                           args.grad_clip)
+            grad_norm = torch.nn.utils.clip_grad_norm_([p for g in opt.param_groups for p in g["params"]],
+                                                       args.grad_clip)
+            diagnostics.observe_clip(grad_norm)
         opt.step()
+        diagnostics.after_step(opt.param_groups, step+1)
         if tracker.interval and ((step+1) % tracker.interval == 0 or step+1 == total):
             tracker.progress(step+1, total, seen, run_loss/max(run_n, 1),
                 "singles" if step < single_steps else "mixed", opt.param_groups)
@@ -456,6 +492,7 @@ def _run(args, run_dir, tracker) -> dict:
     pv = predictions(model, va_batches, va, cfg)
     val_eval = M.evaluate_frame(pv, "pred", min_n=args.eval_min_n,
                                 protein_col=args.eval_protein_col)
+    diagnostics.selected_checkpoint(pv, val_eval, stopped_at or total)
     t_val = time.perf_counter() - t0
     pv.assign(split="val", seed=args.seed).to_csv(run_dir / "predictions_val.csv", index=False)
     write_eval(val_eval, run_dir, "val")
@@ -512,8 +549,10 @@ def _run(args, run_dir, tracker) -> dict:
              "split_sha1": None if fr["split_file"] is None else file_sha1(fr["split_file"]),
              "variants_sha1": file_sha1(fr["dir"] / "variants.parquet"),
              "eval": {"protein_col": args.eval_protein_col, "min_n": args.eval_min_n},
-             "selection": {"rule": args.selection,
-                           "criterion": M.SELECTION_RULES[args.selection], **(best or {})},
+             "selection": {"rule": "fixed_final" if args.final_eval_only else args.selection,
+                           "criterion": "predeclared final update" if args.final_eval_only else M.SELECTION_RULES[args.selection], **(best or {})},
+             "validation_role": "in_sample_former_validation" if getattr(args, "full_train_refit", False) else "held_out",
+             "full_train_refit": getattr(args, "full_train_refit", False),
              "head": cfg.head, "active_head_params": n_head, "active_params": n_active,
              "optimizer_groups": opt_groups, "lora": lora_record(backbone),
              "precision": args.precision, "timing": timing, "memory": memory,
@@ -528,6 +567,7 @@ def _run(args, run_dir, tracker) -> dict:
     (run_dir / "results.json").write_text(json.dumps(
         {"metrics": metrics, "extra": extra, "history": history}, indent=2, default=float))
     tracker.complete(extra)
+    diagnostics.finish()
     if args.save_model:
         torch.save({"trainable_state": trainable_state(model), "args": vars(args),
                     "config": asdict(cfg)}, run_dir / "model.pt")
@@ -542,6 +582,7 @@ def build_parser() -> argparse.ArgumentParser:
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     add_common_args(p)
     add_tracking_args(p)
+    add_diagnostic_args(p)
     g = p.add_argument_group("megascale")
     g.add_argument("--exposures", type=int, default=10,
                    help="training budget in training-set equivalents (N_train sampled rows)")
@@ -561,6 +602,8 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--final-eval-only", action="store_true",
                    help="validate once, after the last step (no checkpoint selection); "
                         "for runs where validation dominates the cost, e.g. --backend exact")
+    g.add_argument("--full-train-refit", action="store_true",
+                   help="merge training and internal validation proteins for a fresh fixed-budget final fit; val metrics become in-sample diagnostics")
     g.add_argument("--evals-per-exposure", type=int, default=1,
                    help="validations per exposure (checkpoint-selection resolution)")
     g.add_argument("--patience", type=int, default=0,
@@ -577,6 +620,8 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--benchmark-inference", action="store_true",
                    help="measure synchronized cold/warm scoring of the final test library")
     g.add_argument("--huber-delta", type=float, default=1.)
+    g.add_argument("--stability-rank-weight", type=float, default=0.,
+                   help="auxiliary within-protein, within-depth RankNet loss weight on raw stability MSE/Huber")
     g.add_argument("--single-weight", type=float, default=1.)
     g.add_argument("--double-weight", type=float, default=1.)
     g.add_argument("--stabilizing-double-weight", type=float, default=1.)

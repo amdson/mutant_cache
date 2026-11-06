@@ -24,12 +24,14 @@ def test_initialize_freezes_plan_data_source_and_explicit_seeds(tmp_path):
     assert (tmp_path/'queue/source_snapshot/mutant_cache/tuning.py').exists()
     assert len(json.loads((tmp_path/'queue/data_provenance.json').read_text()))==3
     assert (tmp_path/'queue/STATUS.md').exists()
-    tracking = dict(wandb_mode='offline', wandb_project='mutant_cache', wandb_entity='test-team')
+    tracking = dict(wandb_mode='offline', wandb_project='mutant_cache', wandb_entity='test-team',
+        diagnostics=True, diagnostic_probe_rows=32)
     write_json(tmp_path/'tracking.json',tracking)
     initialize(tmp_path/'tracked-queue',tmp_path/'plan.json',tmp_path/'template.pt',tmp_path/'tracking.json')
     state=json.loads((tmp_path/'tracked-queue/registry.json').read_text())
     assert state['base_args']['wandb_mode']=='offline'
     assert state['base_args']['wandb_entity']=='test-team'
+    assert state['base_args']['diagnostics'] and state['base_args']['diagnostic_probe_rows']==32
     assert json.loads((tmp_path/'tracked-queue/tracking_config.json').read_text())==tracking
     assert len(state['tracking_config_sha256'])==64
 
@@ -70,6 +72,67 @@ def test_validation_promotion_carries_control_and_resolves_fresh(tmp_path):
     b.update(status='completed',resolved_args=args,metrics=dict(val_spearman=.5,val_double_rmse=.9))
     promote(state,plan,tmp_path)
     assert state['promotions']['B']=='A00' # treatment cannot displace a better control
+
+
+def test_continuation_preserves_finished_results_and_instruments_imported_parent(tmp_path):
+    import torch
+    from fixtures import make_synthetic_dataset
+    from mutant_cache.megascale import build_parser
+    from mutant_cache.tuning import initialize, initialize_continuation, score_result
+    data,_=make_synthetic_dataset(tmp_path/'data',n_targets=5,seq_len=24,
+        n_singles=8,n_doubles=8,n_triples=0)
+    args=build_parser().parse_args(['--data-dir',str(data),'--split','protein'])
+    torch.save({'args':vars(args)},tmp_path/'template.pt')
+    plan=dict(base_overrides=dict(lr=.001),stages=[dict(id='A'),dict(id='B',parent_stage='A')],trials=[
+        dict(id='A00',stage='A',question='control',overrides={}),
+        dict(id='B01',stage='B',question='Huber',overrides=dict(loss='huber_dg'))])
+    write_json(tmp_path/'plan.json',plan)
+    source=tmp_path/'original'
+    initialize(source,tmp_path/'plan.json',tmp_path/'template.pt')
+    state=json.loads((source/'registry.json').read_text())
+    complete=state['trials'][0]
+    directory=source/'runs/A00/attempt_1'
+    directory.mkdir(parents=True)
+    result=dict(extra=dict(val_summary=[dict(depth=d,metric=m,macro=value) for d,m,value in
+        [('all','spearman',.7),('double','spearman',.6),('single','spearman',.8),('double','rmse',1.)]],
+        selection=dict(step=10)))
+    write_json(directory/'results.json',result)
+    (directory/'model.pt').write_bytes(b'finished-checkpoint')
+    complete.update(status='completed',attempts=1,run_dir=str(directory),resolved_args=state['base_args'],
+        metrics=score_result(result))
+    partial=source/'runs/B01/attempt_1'
+    partial.mkdir(parents=True)
+    (partial/'partial.pt').write_bytes(b'partial-checkpoint')
+    state['trials'][1].update(status='interrupted',attempts=1,run_dir=str(partial))
+    write_json(source/'registry.json',state)
+    write_json(source/'STOPPED.json',dict(archive='saved'))
+    before=(source/'registry.json').read_bytes()
+    write_json(tmp_path/'tracking.json',dict(wandb_mode='offline',diagnostics=True,diagnostic_log_every=50))
+    target=tmp_path/'continuation'
+    initialize_continuation(target,source,tmp_path/'tracking.json')
+    continued=json.loads((target/'registry.json').read_text())
+    assert continued['promotions']=={'A':'A00'}
+    assert continued['trials'][0]['metrics']==complete['metrics']
+    assert continued['trials'][0]['run_dir']==str(directory)
+    assert continued['trials'][0]['resolved_args']['diagnostics'] is False
+    assert continued['trials'][1]['prior_attempts'][0]['run_dir']==str(partial)
+    assert (source/'registry.json').read_bytes()==before
+    assert (partial/'partial.pt').read_bytes()==b'partial-checkpoint'
+    job=claim(target,0)
+    assert job['id']=='B01' and job['attempts']==1
+    assert job['resolved_args']['lr']==.001 and job['resolved_args']['loss']=='huber_dg'
+    assert job['resolved_args']['wandb_mode']=='offline' and job['resolved_args']['diagnostics'] is True
+    assert job['resolved_args']['load_trainable'] is None
+    assert job['resolved_args']['output'].startswith(str(target))
+    assert json.loads((target/'plan.json').read_text())==plan
+    with pytest.raises(ValueError,match='already exists'):
+        initialize_continuation(target,source,tmp_path/'tracking.json')
+
+
+def test_continuation_rejects_an_unarchived_source(tmp_path):
+    from mutant_cache.tuning import initialize_continuation
+    with pytest.raises(ValueError,match='stopped and archived'):
+        initialize_continuation(tmp_path/'new',tmp_path/'old',tmp_path/'tracking.json')
 
 
 @pytest.mark.parametrize('mode',['huber','reverse','background','shared_head'])

@@ -95,10 +95,75 @@ def initialize(root, plan, template, tracking_config=None):
         (dataset/'variants.parquet', dataset/'targets.parquet', split)})
     state = dict(created_utc=now(), base_args=base, template_args_source=str(template),
         template_weights_loaded=False, promotions={}, plan_sha256=hashlib.sha256(plan.read_bytes()).hexdigest(),
+        tracking_settings=tracking_settings or {},
         tracking_config_sha256=None if tracking_settings is None else
             hashlib.sha256((root/'tracking_config.json').read_bytes()).hexdigest(),
         trials=[dict(t, status='planned', attempts=0, seed=t.get('seed', 0)) for t in spec['trials']])
     write_json(root/'registry.json', state)
+    refresh(root)
+
+
+def initialize_continuation(root, source_root, tracking_config):
+    """Carry finished scientific results into a fresh instrumented queue.
+
+    Source workers must already be stopped and their artifacts preserved.
+    Incomplete fits restart from pretrained initialization; no optimizer or
+    partially trained weights are silently carried into the new trajectory.
+    """
+    root, source_root = Path(root), Path(source_root)
+    if root.exists():
+        raise ValueError('continuation destination already exists')
+    if not (source_root/'STOPPED.json').exists():
+        raise ValueError('source sweep must be stopped and archived first')
+    source = json.loads((source_root/'registry.json').read_text())
+    for trial in source['trials']:
+        for key in ('worker_pid', 'child_pid'):
+            pid = trial.get(key)
+            if alive(pid):
+                command = Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')
+                if str(source_root).encode() in command:
+                    raise ValueError('source sweep still has a live process')
+    from mutant_cache.data.mutate_everything import sha256
+    provenance = json.loads((source_root/'data_provenance.json').read_text())
+    if any(sha256(path) != digest for path, digest in provenance.items()):
+        raise ValueError('frozen source data changed')
+    completed = [t for t in source['trials'] if t['status']=='completed']
+    for trial in completed:
+        directory = Path(trial['run_dir'])
+        if not (directory/'model.pt').is_file():
+            raise ValueError(f'completed model missing for {trial["id"]}')
+        actual = score_result(json.loads((directory/'results.json').read_text()))
+        if actual != trial['metrics']:
+            raise ValueError(f'completed result changed for {trial["id"]}')
+    initialize(root, source_root/'plan.json', source['template_args_source'], tracking_config)
+    current_provenance = json.loads((root/'data_provenance.json').read_text())
+    if current_provenance != provenance:
+        raise ValueError('continuation data provenance differs from the source sweep')
+    with locked(root) as state:
+        # Preserve the original complete base recipe, including settings that
+        # may not have appeared explicitly in the JSON plan.
+        state['base_args'] = {**source['base_args'], **state['tracking_settings']}
+        old = {t['id']: t for t in source['trials']}
+        if set(old) != {t['id'] for t in state['trials']}:
+            raise ValueError('continuation trial IDs differ from the source')
+        for index, trial in enumerate(state['trials']):
+            prior = old[trial['id']]
+            if prior['status']=='completed':
+                imported = json.loads(json.dumps(prior))
+                imported.update(imported_from=str(source_root),
+                    tracking_record_dir=str(root/'imported_runs'/trial['id']))
+                state['trials'][index] = imported
+            elif prior.get('run_dir'):
+                trial['prior_attempts'] = [prior]
+        state['continuation'] = dict(source_root=str(source_root),
+            source_plan_sha256=source['plan_sha256'],
+            imported_completed=[t['id'] for t in completed],
+            restarted=[t['id'] for t in source['trials'] if t['status']=='interrupted'],
+            exact_optimizer_resume=False, training_hyperparameters_changed=False,
+            old_source_hashes=str(source_root/'source_sha256.json'))
+        promote(state, json.loads((root/'plan.json').read_text()), root)
+        write_json(root/'continuation.json', state['continuation'])
+    shutil.copy2(source_root/'STOPPED.json', root/'source_stop_record.json')
     refresh(root)
 
 
@@ -164,6 +229,9 @@ def resolve(state, spec, trial):
         if parent is None:
             return None
     args = dict(by_id[parent]['resolved_args'] if parent else state['base_args'])
+    # Operational settings apply even when a scientific parent was imported
+    # from a sweep that predates W&B/diagnostics.
+    args.update(state.get('tracking_settings', {}))
     args.update(trial.get('overrides', {}))
     args.update(seed=trial['seed'], final_test=False, benchmark_inference=False,load_trainable=None)
     trial['parent_id'] = parent or 'frozen pilot recipe'
@@ -284,7 +352,7 @@ def refresh(root):
             progress = {}
             tracking = {}
             if t.get('run_dir'):
-                path = Path(t['run_dir'])/'tracking.json'
+                path = Path(t.get('tracking_record_dir') or t['run_dir'])/'tracking.json'
                 if path.exists():
                     try: tracking=json.loads(path.read_text())
                     except json.JSONDecodeError: pass
@@ -311,10 +379,16 @@ def refresh(root):
                 step=progress.get('step',''),head=args.get('head',''),loss=args.get('loss',''),
                 head_lr=args.get('lr',''),adapter_lr=args.get('lora_lr',''),
                 lora_rank=args.get('lora_r',''),shared_rank=args.get('shared_lora_r',''),
+                shared_alpha=args.get('shared_lora_alpha',''),
+                shared_targets=args.get('shared_lora_targets',''),
+                ranking_weight=args.get('stability_rank_weight',0.),
+                interaction_residual=args.get('interaction_residual',False),
+                precision=args.get('precision',''),backbone_train_last=args.get('backbone_train_last',0),
                 exposures=args.get('exposures',''),single_only_exposures=args.get('single_only_exposures',''),
                 single_weight=args.get('single_weight',''),double_positive_weight=args.get('stabilizing_double_weight',''),
                 double_subsample_ratio=args.get('double_subsample_ratio',''),task_reduction=args.get('task_reduction',''),
                 reference_augmentation=args.get('reference_augmentation',''),
+                imported_from=t.get('imported_from',''),
                 **metrics,wandb_url=tracking.get('url') or '',
                 run_dir=t.get('run_dir',''),error=t.get('error','')))
         columns=list(dict.fromkeys(k for row in rows for k in row))
@@ -333,6 +407,12 @@ def refresh(root):
             'double-Spearman and nDCG@30 checkpoints. Screening seed is 0; confirmation seeds are 1/2.',
             '', '| ID | Study | Status | Seed | GPU | Step | Val rho | Double RMSE | Artifacts |',
             '| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |']
+        if state.get('continuation'):
+            info = state['continuation']
+            lines[4:4] = [f'Continuation of `{info["source_root"]}`: '
+                f'{len(info["imported_completed"])} completed fits retained; '
+                'unfinished fits start fresh with W&B and sampled diagnostics. '
+                'Imported histories have no retrospective gradient/activation measurements.', '']
         for row in rows:
             rho=row.get('val_spearman');rmse=row.get('val_double_rmse')
             artifacts=f'[run]({row["run_dir"]}) · [log]({row["run_dir"]}/train.log)' if row['run_dir'] else ''
@@ -369,11 +449,16 @@ def main():
     init.add_argument('--plan',required=True,type=Path);init.add_argument('--template',required=True,type=Path)
     init.add_argument('--tracking-config',type=Path,
         help='optional W&B settings JSON, frozen alongside the experiment plan')
+    cont=sub.add_parser('continue',help='continue a stopped sweep with completed results preserved')
+    cont.add_argument('--root',required=True,type=Path)
+    cont.add_argument('--source-root',required=True,type=Path)
+    cont.add_argument('--tracking-config',required=True,type=Path)
     work=sub.add_parser('worker');work.add_argument('--root',required=True,type=Path);work.add_argument('--gpu',required=True,type=int)
     trial=sub.add_parser('run-trial');trial.add_argument('--root',required=True,type=Path);trial.add_argument('--id',required=True)
     report=sub.add_parser('report');report.add_argument('--root',required=True,type=Path)
     a=parser.parse_args()
     if a.command=='init': initialize(a.root,a.plan,a.template,a.tracking_config)
+    elif a.command=='continue': initialize_continuation(a.root,a.source_root,a.tracking_config)
     elif a.command=='worker': worker(a.root,a.gpu)
     elif a.command=='run-trial': run_trial(a.root,a.id)
     else: refresh(a.root)

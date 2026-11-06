@@ -188,7 +188,142 @@ adding more architectures or accessing final test outcomes.
   double inference separately. Avoid extrapolating short-domain speedups to
   long proteins without measurement.
 
-## 5. External ESM-MSR comparison
+## 5. Match the ESM-MSR evaluation stack (next action)
+
+Added 2026-11-04 after reading the cloned repo
+(`$MUTANT_CACHE_SCRATCH/esm_msr/repo`) and its released archive. Fairness here
+means a matched *evaluation*, not a matched training recipe: do not import
+their two-phase LoRA, plateau LR decay, ranking loss, or learning rate into S
+or A. S and A keep one shared recipe (section 3) so the joint-vs-additive
+contrast stays interpretable.
+
+Every item below is validation-only or operates on their predictions. The test
+partition is still touched once, after section 3 freezes configurations.
+
+### 5.1 Pin the comparison target
+
+- [x] Record the repo git revision, the archive checksum, and the SHA of both
+  `hyperopt_splits.csv`/`.pkl` copies (`repo/data/` and `preprocessed/data/`);
+  confirm the two copies are identical. (2026-11-04, sha256; repo clean.)
+  - repo `c34c315913b539070095b8af63b4bd7fbcd503b7`
+  - `preprocessed_data.tar.gz` `9c36e94df4ba6c2f035e2c395301ed98f288f6bd95abc20a05c67e97dce22086`
+  - `hyperopt_splits.csv` `e3fccc655fd3ec1fa808da22f85f853ad688486b96582f8ddd0b1eb2ada0959d` (both copies)
+  - `hyperopt_splits.pkl` `d7d9310207a675b695b233dff76c1c0aaa6f365d857bef247c14067245192844` (both copies)
+- [x] Verified present locally: `preprocessed/data/structures/*.pdb` (2845
+  files) and the hyperopt split files. No further download is needed for the
+  Megascale branch.
+- [ ] Use the paper checkpoints from their HuggingFace page, not the bundled
+  `esm-msr-small/epoch=03-val_rho_combined_avg=0.816.ckpt`. Record file name and
+  hash, and keep the bundled checkpoint as a separate, clearly labelled row.
+  Bundled checkpoint sha256:
+  `c6bd530ac7fa75599ab14f661c265afefadefad0255c9940f824350b91ca8d55`.
+  HuggingFace checkpoints not yet downloaded.
+- [ ] **Blocked on a human:** ESM3-small-open weights require accepting the
+  licence on HuggingFace. Claude cannot accept it; the user must, once.
+- [ ] Audit what their checkpoint trained on against our test proteins. Overlap
+  invalidates a like-for-like test comparison and must be stated.
+
+### 5.2 Match the evaluated row set
+
+- [ ] **Protein grouping key.** They group per-protein stats by `code_wt`
+  (`res_df.groupby('code_wt')`); we group by `target_id`. Test is 34 vs 36
+  groups, because engineered backgrounds (e.g. `1SF0_V59K`) collapse into their
+  parent. Add a protein-column option to our evaluator and report both.
+  (Option exists: `protein_col=` on every `eval/megascale.py` function; the
+  report needs the joined frame.)
+- [ ] **Variant identity.** Their join key is `code + chain + '_' +
+  mut_type_renumbered` (structure-based renumbering); ours is 1-based sequence
+  numbering. Build an explicit mapping, assert WT residue identity on both
+  sides, and log every unmatched row rather than dropping it silently.
+- [ ] **Depth.** They split singles/doubles on `':' in mut_type`; we use
+  `n_mut`. Assert these agree on the joined frame.
+- [ ] Evaluate both methods on the identical eligible rows (inner join).
+  Record missing predictions per method and report the intersection as the
+  primary comparison, with each method's own full row set as secondary.
+
+### 5.3 Match the metric definitions
+
+- [x] **Their headline is not one of ours yet.** `val_rho_combined_avg` (the
+  0.816 in the bundled checkpoint name) is the macro mean over proteins of a
+  *within-protein Spearman over singles and doubles pooled*, on the `combined`
+  pathway. We report Spearman per depth only. Add an all-depth within-protein
+  Spearman to `mutant_cache/eval/megascale.py`. (Done: depth `all` in
+  `per_protein_metrics`, `summarize`, `pooled_metrics`.)
+- [x] **Minimum sample count.** Their `safe_spearman` needs only 2 valid
+  points; our `MIN_N = 10` excludes small proteins. Make this an option, match
+  it for the headline comparison, and state which proteins each rule drops.
+  (`min_n=ESM_MSR_MIN_N` (2) matches `safe_spearman`, tested against its
+  logic; `min_n_drops()` lists drops per rule. Still to run on real data.)
+- [x] **Aggregation.** They use `stats.mean(axis=0)` (pandas, NaN-skipping) over
+  per-protein rows, which is a macro mean like ours. Verify our NaN handling
+  matches on the same inputs. (Tested: `summarize` macro equals pandas
+  `mean()` with undefined proteins skipped. Within a protein, rows with a NaN
+  prediction are *not* dropped by us, but their test script drops them
+  pairwise. The 5.2 inner join must leave no NaN predictions.)
+- [x] **NDCG.** Our `ndcg_at_k` already mirrors their
+  `compute_ndcg_flexible(top_n=96)`: relevance floored at 0, linear gain
+  (`exponential_relevance=False`), `ignore_ties=True`, `k = min(96, n)`, NaN
+  when a protein has no stabilizing variant. Re-verify after any change, and
+  add their second variant `safe_ndcg_t0` (`threshold=0.0`, `k=None`).
+  (Done: `ndcg_at_k(k=None)`, `ndcg_t0` column, `ndcg_t0_macro`.)
+- [ ] **Sign.** Positive = stabilizing on both sides (our audit: 15.8% of train
+  rows stabilizing, ddG q95 +0.36). Assert this on the joined frame instead of
+  trusting it.
+- [ ] **Epistasis.** Their truth column is `dddG_ML`, and they predict two
+  variants: a heuristic epsilon and a full one (`combined` minus the sum of the
+  constituent singles' `combined` scores). Ours is
+  `epsilon = d(AB) - d(A) - d(B)`. Pin which of theirs is ours, use complete
+  measurement groups only, and keep physical units.
+- [ ] Confirm whether any calibration or scaling is applied before their RMSE,
+  and invert ours the same way before comparing physical-unit errors.
+
+### 5.4 Match the inference setting
+
+- [ ] Use full mutant context for all double and epistasis claims. Their
+  `--skip_reverse` drops the MT and Combined pathways entirely and is an
+  additive approximation; report it separately as an accuracy/cost baseline.
+- [ ] Record the exact invocation, including `--lora_epsilon`,
+  `--mask_strategy`, and `--skip_additive`, since these change both behaviour
+  and output file naming.
+- [ ] Their DMS branch has hard-coded `/home/sareeves/...` paths. Use
+  `--skip_dms` for the Megascale comparison, or patch and keep the patch under
+  `experiments/` exactly as run.
+- [ ] Benchmark their inference on the same GPU and variant lists as ours:
+  cold time, warm throughput, peak memory. Their README expects at least an
+  hour for the benchmark on a strong GPU.
+
+### 5.5 Our side, before any test access
+
+- [x] Extend `mutant_cache/eval/megascale.py` with the all-depth within-protein
+  Spearman, `ndcg_t0`, and the protein-column and minimum-n options. Keep
+  current defaults so existing numbers stay reproducible. (`MIN_N` stays 10.
+  Existing single/double/epistasis numbers are unchanged; `all` rows and the
+  `ndcg_t0` columns are added alongside them.)
+- [x] Record the selection-rule change (macro validation Spearman rather than
+  double RMSE) with its justification: in the 2026-11-02 early-stopping screen,
+  7 of 8 runs selected their first validation inside LR warm-up because double
+  RMSE wanders while Spearman is flat. This was decided with no test access.
+  (Recorded in `selection_key` / `SELECTION_RULES`. Opt-in via
+  `--selection spearman` = macro all-depth Spearman, tie-broken by macro double
+  Spearman, then earliest. The default is still `double_rmse`, so earlier runs
+  stay reproducible. Runs record `selection.rule`.)
+- [ ] Validate the matched evaluator on validation data first, per section 4.
+
+**Gate:** the matched evaluator reproduces their reported per-protein metrics
+from their own prediction files before any cross-method number is quoted. If it
+cannot, label their results as published and avoid any superiority claim.
+
+### 5.6 Reporting
+
+- [ ] Macro per-protein is the primary summary; pooled and median are clearly
+  labelled secondary. Never compare our macro with their pooled or median.
+- [ ] Report paired per-protein differences with protein-bootstrap intervals,
+  retaining seed-level results.
+- [ ] State the system differences plainly: they use ESM3 with structural
+  inputs, we use ESM-C sequence only. This is a comparison of systems, not an
+  isolated architecture ablation.
+
+## 6. External ESM-MSR comparison
 
 - [ ] Obtain the exact paper checkpoint/configuration and reproduce its scores
   on the frozen test examples. Audit checkpoint training overlap. Record missing
@@ -203,7 +338,7 @@ adding more architectures or accessing final test outcomes.
   If local reproduction is unavailable, clearly label published results and
   avoid a direct superiority claim based on unmatched evaluations.
 
-## 6. Interpretation and next decision
+## 7. Interpretation and next decision
 
 There is no justified universal target such as 'beat 0.59' across incompatible
 splits. Define progress through paired comparisons on this exact protocol.

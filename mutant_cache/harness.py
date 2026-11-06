@@ -117,8 +117,16 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
                         "the wild-type context the variants read can move too. "
                         "Costs the reference cache during training (the "
                         "reference is recomputed with grad every batch)")
+    g.add_argument("--lora-dropout", type=float, default=0.0,
+                   help="dropout on inputs to both LoRA adapter sets")
+    g.add_argument("--head-weight-decay", type=float, default=None,
+                   help="head AdamW decay (default --weight-decay)")
+    g.add_argument("--lora-weight-decay", type=float, default=None,
+                   help="adapter AdamW decay (default --weight-decay)")
     g.add_argument("--lora-alpha", type=float, default=None,
                    help="LoRA alpha for both sets (default 2*r)")
+    g.add_argument("--shared-lora-alpha", type=float, default=None,
+                   help="shared adapter alpha override (default --lora-alpha or 2*r)")
     g.add_argument("--lora-targets", nargs="+", default=None,
                    help="LoRA projections: q k v o plus gate up down for ESM-C "
                         "or fc1 fc2 for ESM-2; defaults q o and all MLP projections (the ones applied only to the "
@@ -161,6 +169,10 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
                    help="the plain model: cache -> mean-pool mutated tokens -> "
                         "one MLP. Turns off the marginal prior, added token "
                         "embeddings, reference summary and assay terms")
+    g.add_argument("--interaction-residual", action="store_true",
+                   help="sum predicted singles plus a zero-initialized joint residual, zero for singles")
+    g.add_argument("--backbone-train-last", type=int, default=0,
+                   help="with --train-backbone and fp32, train only last N blocks and final norm")
     g.add_argument("--head", choices=list(HEADS), default="mean",
                    help="minimal-model readout (needs --minimal unless 'mean'): "
                         "mean (original), mean_count, sum_mean_count, wt_relative "
@@ -442,16 +454,27 @@ def attach_lora(args, backbone) -> None:
     if not isinstance(backbone, ESMC):
         raise ValueError("LoRA needs the ESM-C backbone (not --backbone stub)")
 
-    def cfg(r, targets):
-        return LoRAConfig(r=r, alpha=args.lora_alpha or 2.0 * r,
+    def cfg(r, targets, alpha=None):
+        return LoRAConfig(r=r, alpha=alpha or args.lora_alpha or 2.0 * r,
                           targets=tuple(targets or getattr(backbone, "default_lora_targets", DEFAULT_TARGETS)),
-                          compute=args.lora_compute)
+                          compute=args.lora_compute,
+                          dropout=getattr(args, "lora_dropout", 0.0))
     freeze = not args.train_backbone
     if args.lora_r:
         attach_variant_lora(backbone, cfg(args.lora_r, args.lora_targets), freeze_base=freeze)
     if args.shared_lora_r:
-        attach_shared_lora(backbone, cfg(args.shared_lora_r, args.shared_lora_targets),
+        attach_shared_lora(backbone, cfg(args.shared_lora_r, args.shared_lora_targets, getattr(args, 'shared_lora_alpha', None)),
                            freeze_base=freeze)
+    last = getattr(args, 'backbone_train_last', 0)
+    if last:
+        if not args.train_backbone or args.precision != 'fp32' or not 0 < last <= len(backbone.blocks):
+            raise ValueError('partial backbone training requires train-backbone, fp32 and a valid block count')
+        adapter_ids = {id(p) for p in _adapter_parameters(backbone)}
+        for p in backbone.parameters():
+            p.requires_grad_(id(p) in adapter_ids)
+        for module in list(backbone.blocks[-last:]) + [backbone.transformer.norm]:
+            for p in module.parameters():
+                p.requires_grad_(True)
     for which in ("variant", "shared"):
         ps = _adapter_parameters(backbone, which)
         if ps:
@@ -619,8 +642,9 @@ def build_param_groups(model, args) -> list[dict]:
             raise RuntimeError(f"parameter group {name!r} repeats {len(dup)} parameter(s)")
         seen |= {id(p) for p in ps}
         if ps:
+            decay = getattr(args, "head_weight_decay" if name == "head" else "lora_weight_decay", None) if name != "backbone" else None
             out.append({"name": name, "params": ps, "lr": lr,
-                        "weight_decay": args.weight_decay})
+                        "weight_decay": args.weight_decay if decay is None else decay})
     # a trainable backbone parameter outside every group is a configuration
     # error (e.g. an unfrozen base without --train-backbone). Head modules the
     # chosen head does not use (legacy minimal) are deliberately not optimized.
@@ -657,7 +681,8 @@ def build_config(args, backbone, n_assays: int) -> VariantModelConfig:
         head=args.head, token_proj_dim=args.token_proj_dim,
         residue_embed_dim=args.residue_embed_dim,
         zero_anchor=getattr(args, "zero_anchor", False),
-        composition=getattr(args, "composition", "joint"))
+        composition=getattr(args, "composition", "joint"),
+        interaction_residual=getattr(args, "interaction_residual", False))
 
 
 def build_loss(args) -> VariantLoss:

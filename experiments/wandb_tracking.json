@@ -3,5 +3,16 @@
   "wandb_project": "mutant_cache",
   "wandb_entity": "amdickson128-usda",
   "wandb_log_every": 50,
+  "diagnostics": true,
+  "diagnostic_log_every": 50,
+  "diagnostic_eval_every": 1,
+  "diagnostic_profile_every": 5,
+  "diagnostic_probe_proteins": 8,
+  "diagnostic_probe_rows": 128,
+  "diagnostic_plot_rows": 512,
+  "diagnostic_activation_rows": 32,
+  "diagnostic_activation_proteins": 2,
+  "diagnostic_parameter_samples": 8192,
+  "diagnostic_seed": 0,
   "wandb_tags": ["mutate-everything"]
 }

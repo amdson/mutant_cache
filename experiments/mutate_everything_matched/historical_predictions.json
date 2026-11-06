@@ -1,0 +1,94 @@
+{
+  "panels": [
+    {
+      "id": "cdna2",
+      "labels": "/home/andrew/mutant_cache_scratch/processed/mutate_everything_cdna/comparison_labels_test.csv",
+      "baseline": "/home/andrew/mutant_cache_scratch/mutate_everything/baseline/predictions_cdna2.csv",
+      "expected_rows": 21933,
+      "comparator": "Mutate Everything ESM-2 650M joint checkpoint",
+      "interpretation": "Released matched benchmark rows",
+      "expected": {
+        "all": {
+          "ndcg30": 0.38
+        }
+      },
+      "expected_source": "https://github.com/jozhang97/MutateEverything/tree/034dd91e7a449e68b0f0993043bd32ce281f056c#main-results"
+    },
+    {
+      "id": "s669",
+      "labels": "/home/andrew/mutant_cache_scratch/mutate_everything/external/s669_labels.csv",
+      "baseline": "/home/andrew/mutant_cache_scratch/mutate_everything/external/baseline/s669_single_only_predictions.csv",
+      "expected_rows": 669,
+      "comparator": "Mutate Everything ESM-2 650M single-only checkpoint",
+      "interpretation": "Released matched benchmark rows",
+      "expected": {
+        "all": {
+          "spearman": 0.47
+        }
+      },
+      "expected_source": "https://github.com/jozhang97/MutateEverything/tree/034dd91e7a449e68b0f0993043bd32ce281f056c#main-results"
+    },
+    {
+      "id": "ptmul",
+      "labels": "/home/andrew/mutant_cache_scratch/mutate_everything/external/ptmul_labels.csv",
+      "baseline": "/home/andrew/mutant_cache_scratch/mutate_everything/external/baseline/ptmul_predictions.csv",
+      "expected_rows": 846,
+      "comparator": "Mutate Everything ESM-2 650M joint checkpoint",
+      "interpretation": "Released matched benchmark rows"
+    },
+    {
+      "id": "cdna1",
+      "labels": "/home/andrew/mutant_cache_scratch/mutate_everything/external/cdna1_labels.csv",
+      "baseline": "/home/andrew/mutant_cache_scratch/mutate_everything/external/baseline/cdna1_predictions.csv",
+      "expected_rows": 19645,
+      "comparator": "Mutate Everything ESM-2 650M joint checkpoint",
+      "interpretation": "Released matched benchmark rows"
+    },
+    {
+      "id": "s669_reverse",
+      "labels": "/home/andrew/mutant_cache_scratch/mutate_everything/external/s669_reverse_labels.csv",
+      "baseline": "/home/andrew/mutant_cache_scratch/mutate_everything/external/baseline/s669_reverse_predictions.csv",
+      "expected_rows": 669,
+      "comparator": "Mutate Everything ESM-2 650M joint checkpoint",
+      "interpretation": "Uncalibrated reverse diagnostic; not reproduction of paper reverse table"
+    }
+  ],
+  "models": [
+    {
+      "id": "historical_joint",
+      "training_protocol": "104 training proteins; 12 internal validation proteins; frozen ESM2-650M plus LoRA; not full-116 training",
+      "fits": [
+        {
+          "seed": 0,
+          "predictions": {
+            "cdna2": "/home/andrew/mutant_cache_scratch/runs/mutate_everything_esm2_pilot_20261104/joint_s0_cdna2_fixed/predictions_test.csv",
+            "s669": "/home/andrew/mutant_cache_scratch/mutate_everything/external/ours_joint_s0/s669_labels_predictions.csv",
+            "ptmul": "/home/andrew/mutant_cache_scratch/mutate_everything/external/ours_joint_s0/ptmul_labels_predictions.csv",
+            "cdna1": "/home/andrew/mutant_cache_scratch/mutate_everything/external/ours_joint_s0/cdna1_labels_predictions.csv",
+            "s669_reverse": "/home/andrew/mutant_cache_scratch/mutate_everything/external/ours_joint_s0/s669_reverse_labels_predictions.csv"
+          }
+        },
+        {
+          "seed": 1,
+          "predictions": {
+            "cdna2": "/home/andrew/mutant_cache_scratch/runs/mutate_everything_breadth_20261104/eval_joint_s1/comparison_labels_test_predictions.csv",
+            "s669": "/home/andrew/mutant_cache_scratch/runs/mutate_everything_breadth_20261104/eval_joint_s1/s669_labels_predictions.csv",
+            "ptmul": "/home/andrew/mutant_cache_scratch/runs/mutate_everything_breadth_20261104/eval_joint_s1/ptmul_labels_predictions.csv",
+            "cdna1": "/home/andrew/mutant_cache_scratch/runs/mutate_everything_breadth_20261104/eval_joint_s1/cdna1_labels_predictions.csv",
+            "s669_reverse": "/home/andrew/mutant_cache_scratch/runs/mutate_everything_breadth_20261104/eval_joint_s1/s669_reverse_labels_predictions.csv"
+          }
+        },
+        {
+          "seed": 2,
+          "predictions": {
+            "cdna2": "/home/andrew/mutant_cache_scratch/runs/mutate_everything_breadth_20261104/eval_joint_s2/comparison_labels_test_predictions.csv",
+            "s669": "/home/andrew/mutant_cache_scratch/runs/mutate_everything_breadth_20261104/eval_joint_s2/s669_labels_predictions.csv",
+            "ptmul": "/home/andrew/mutant_cache_scratch/runs/mutate_everything_breadth_20261104/eval_joint_s2/ptmul_labels_predictions.csv",
+            "cdna1": "/home/andrew/mutant_cache_scratch/runs/mutate_everything_breadth_20261104/eval_joint_s2/cdna1_labels_predictions.csv",
+            "s669_reverse": "/home/andrew/mutant_cache_scratch/runs/mutate_everything_breadth_20261104/eval_joint_s2/s669_reverse_labels_predictions.csv"
+          }
+        }
+      ]
+    }
+  ]
+}

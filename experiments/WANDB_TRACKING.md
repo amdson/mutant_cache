@@ -2,6 +2,10 @@ Future supervised Megascale/tuning runs can stream progress to
 [amdickson128-usda/mutant_cache](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache).
 Tracking is optional and defaults to `disabled`.
 
+Online access was verified on 2026-11-04. The SDK's saved login works in a
+fresh process without sourcing `.bashrc`. The isolated environment below is
+ready to launch future runs with the checked-in tracking preset.
+
 Install and authenticate in the environment that will launch those runs:
 
 ```bash
@@ -40,7 +44,7 @@ For a standalone `python -m mutant_cache.megascale` run, append:
 
 ```bash
 --wandb-mode online --wandb-project mutant_cache --wandb-entity amdickson128-usda \
---wandb-group STUDY_NAME --wandb-name RUN_NAME --wandb-log-every 50
+--wandb-group STUDY_NAME --wandb-name RUN_NAME --wandb-log-every 50 --diagnostics
 ```
 
 The queue automatically supplies the sweep folder name as the W&B group, names
@@ -68,7 +72,9 @@ Group/filter by the sweep, stage, seed or configuration fields to compare runs.
 The local status page links online runs directly; `tracking.json` in each run
 directory records its ID, URL, mode, SDK version and completion status.
 Local histories and checkpoints continue to be saved. Tracking uploads scalar
-metrics and configuration; it does not upload prediction tables or model files.
+metrics and configuration. The [diagnostic preset](DIAGNOSTICS.md) additionally
+uploads bounded scatter-plot data and per-protein tables; it does not upload
+sequences, model files or full prediction tables.
 
 Offline testing and later synchronization are also supported:
 
@@ -83,10 +89,27 @@ training continues; the dashboard may then be incomplete. Training failures
 finish the W&B run with a failure exit code.
 
 The already-launched `mutate_everything_tuning_v1` sweep uses its frozen source
-and plan. These hooks apply to future initializations. Local authentication is
-still needed before an online launch.
+and plan. These hooks apply to future initializations; its workers were not
+restarted or modified during authentication setup.
 
 The exact integration preflight is [wandb_tracking_smoke.py](wandb_tracking_smoke.py).
+Validation on 2026-11-04: 21 tracking/queue/training tests passed, including exact
+prediction parity with tracking disabled. A complete CPU training run passed
+with W&B 0.31.0 offline; inspection of its transaction log confirmed validation
+metrics, learning rates, selected metrics and a successful exit. Its local
+[smoke result](/home/andrew/mutant_cache_scratch/runs/wandb_tracking_preflight_20261104/smoke_result.json)
+records the SDK version and artifact paths.
+
+The [online training check](wandb_tracking_online_smoke.py) authenticated and
+uploaded a tiny synthetic CPU run. Its initial completion poll saw a cached
+running state; the [fresh-process verification](wandb_tracking_online_verify.py)
+refreshes the server response and verifies the saved login, finished state,
+configuration, validation metrics and selected checkpoint. See the
+[dashboard test run](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/f456e5764fda4d13)
+and [online verification record](/home/andrew/mutant_cache_scratch/runs/wandb_tracking_online_preflight_20261104/smoke_result.json).
+This is tagged `integration-test`/`synthetic` and grouped under
+`tracking-verification`, separate from scientific experiments.
+
 Implementation follows the official SDK's
 [initialization API](https://github.com/wandb/wandb/blob/main/wandb/sdk/wandb_init.py)
 and [run logging API](https://github.com/wandb/wandb/blob/main/wandb/sdk/wandb_run.py).

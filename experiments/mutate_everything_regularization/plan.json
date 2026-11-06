@@ -1,0 +1,144 @@
+{
+  "name": "Mutate Everything regularization screen",
+  "report_path": "/home/andrew/mutant_cache/experiments/mutate_everything_regularization/STATUS.md",
+  "base_overrides": {
+    "dataset": "mutate_everything_cdna",
+    "split": "mutate_everything_cdna",
+    "backbone": "esm2_t33_650M_UR50D",
+    "precision": "bf16",
+    "composition": "joint",
+    "head": "sum_mean_count",
+    "minimal": true,
+    "zero_anchor": true,
+    "loss": "mse_dg",
+    "lr": 0.001,
+    "lora_lr": 0.0003,
+    "lora_r": 8,
+    "lora_alpha": 16.0,
+    "shared_lora_r": 0,
+    "weight_decay": 0.01,
+    "dropout": 0.0,
+    "grad_clip": 1.0,
+    "exposures": 3,
+    "schedule": "cosine",
+    "warmup_frac": 0.05,
+    "micro_batch": 64,
+    "proteins_per_step": 4,
+    "eval_batch_size": 512,
+    "evals_per_exposure": 10,
+    "patience": 0,
+    "selection": "spearman",
+    "save_model": true,
+    "save_selection_rules": [
+      "double_rmse",
+      "spearman",
+      "double_spearman",
+      "ndcg30"
+    ],
+    "log_every": 50,
+    "train_backbone": false,
+    "no_marginals": true,
+    "single_weight": 1.0,
+    "double_weight": 1.0,
+    "stabilizing_double_weight": 1.0,
+    "double_subsample_ratio": 0.0,
+    "task_reduction": "rows",
+    "huber_delta": 1.0,
+    "single_only_exposures": 0.0,
+    "reference_augmentation": "none",
+    "augmentation_fraction": 0.25,
+    "backgrounds_per_protein": 4,
+    "lora_dropout": 0.0,
+    "head_weight_decay": null,
+    "lora_weight_decay": null
+  },
+  "stages": [
+    {
+      "id": "R",
+      "name": "Regularization against original control"
+    }
+  ],
+  "trials": [
+    {
+      "id": "R00",
+      "stage": "R",
+      "question": "Control",
+      "overrides": {}
+    },
+    {
+      "id": "R01",
+      "stage": "R",
+      "question": "Head dropout 0.2",
+      "overrides": {
+        "dropout": 0.2
+      }
+    },
+    {
+      "id": "R02",
+      "stage": "R",
+      "question": "Head dropout 0.5",
+      "overrides": {
+        "dropout": 0.5
+      }
+    },
+    {
+      "id": "R03",
+      "stage": "R",
+      "question": "Adapter dropout 0.1",
+      "overrides": {
+        "lora_dropout": 0.1
+      }
+    },
+    {
+      "id": "R04",
+      "stage": "R",
+      "question": "Adapter dropout 0.3",
+      "overrides": {
+        "lora_dropout": 0.3
+      }
+    },
+    {
+      "id": "R05",
+      "stage": "R",
+      "question": "Head decay 0.1",
+      "overrides": {
+        "head_weight_decay": 0.1
+      }
+    },
+    {
+      "id": "R06",
+      "stage": "R",
+      "question": "Head decay 1.0",
+      "overrides": {
+        "head_weight_decay": 1.0
+      }
+    },
+    {
+      "id": "R07",
+      "stage": "R",
+      "question": "Adapter decay 0.1",
+      "overrides": {
+        "lora_weight_decay": 0.1
+      }
+    },
+    {
+      "id": "R08",
+      "stage": "R",
+      "question": "Adapter decay 1.0",
+      "overrides": {
+        "lora_weight_decay": 1.0
+      }
+    },
+    {
+      "id": "R09",
+      "stage": "R",
+      "question": "Combined strong regularization",
+      "overrides": {
+        "dropout": 0.5,
+        "lora_dropout": 0.3,
+        "head_weight_decay": 0.1,
+        "lora_weight_decay": 0.1
+      }
+    }
+  ]
+}

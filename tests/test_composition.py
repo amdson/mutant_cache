@@ -188,3 +188,24 @@ def test_additive_gradients_reach_head_and_variant_lora(world):
         for p in bb.parameters():
             p.grad = None
         detach_variant_lora(bb)
+
+
+def test_residual_starts_additive_and_singles_stay_residual_free(world):
+    bb, seq, frame = world
+    model = VariantEffectModel(bb, VariantModelConfig(n_assays=1, minimal=True,
+        head='wt_relative', zero_anchor=True, interaction_residual=True)).to(DEV).eval()
+    batches = _batches(bb, seq, frame)
+    for batch in batches:
+        batch = batch.to(DEV)
+        joint = model(batch)
+        additive = model(batch, composition='additive')
+        assert torch.allclose(joint.pred, additive.pred, atol=1e-6)
+        assert torch.equal(joint.interaction, torch.zeros_like(joint.interaction))
+        joint.pred.sum().backward()
+        assert model.residual_mlp[-1].weight.grad.abs().sum() > 0
+        with torch.no_grad():
+            model.residual_mlp[-1].weight.fill_(.01)
+        changed = model(batch)
+        assert torch.equal(changed.interaction[batch.n_mut <= 1], torch.zeros_like(changed.interaction[batch.n_mut <= 1]))
+        single, _ = singles_batch(batch)
+        assert torch.allclose(model(single).pred, model(single, composition='additive').pred, atol=1e-6)

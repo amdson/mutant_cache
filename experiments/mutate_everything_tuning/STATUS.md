@@ -1,6 +1,8 @@
 # Mutate Everything tuning — live status
 
-Updated 2026-11-04T23:03:45.261208+00:00.
+Updated 2026-11-05T14:25:13.912385+00:00.
+
+Continuation of `/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1`: 6 completed fits retained; unfinished fits start fresh with W&B and sampled diagnostics. Imported histories have no retrospective gradient/activation measurements.
 
 Selection uses internal validation only. All trials save separate RMSE, Spearman, double-Spearman and nDCG@30 checkpoints. Screening seed is 0; confirmation seeds are 1/2.
 
@@ -8,32 +10,38 @@ Selection uses internal validation only. All trials save separate RMSE, Spearman
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | A00 | Fixed-budget control | completed | 0 | 0 | 2250 | 0.8119 | 0.8444 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/runs/A00/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/runs/A00/attempt_1/train.log) |
 | A01 | Lower head LR only | completed | 0 | 2 | 2250 | 0.8082 | 0.8686 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/runs/A01/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/runs/A01/attempt_1/train.log) |
-| A02 | Lower adapter LR only | running | 0 | 0 |  | — | — | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/runs/A02/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/runs/A02/attempt_1/train.log) |
-| A03 | Both learning rates lower | running | 0 | 2 |  | — | — | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/runs/A03/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/runs/A03/attempt_1/train.log) |
-| B01 | Huber loss only | planned | 0 |  |  | — | — |  |
-| B02 | 4x non-destabilizing doubles only | planned | 0 |  |  | — | — |  |
-| B03 | 8:1 double subsampling only | planned | 0 |  |  | — | — |  |
-| B04 | Separate tasks; singles weight 0.1 | planned | 0 |  |  | — | — |  |
-| B05 | Combined Huber and balancing recipe | planned | 0 |  |  | — | — |  |
-| C01 | 1 singles + 2 mixed exposures | planned | 0 |  |  | — | — |  |
-| C02 | 6 mixed exposures; budget control | planned | 0 |  |  | — | — |  |
-| C03 | 2 singles + 4 mixed exposures | planned | 0 |  |  | — | — |  |
-| D01 | WT-relative mutation readout | planned | 0 |  |  | — | — |  |
-| D02 | Mutation projection control | planned | 0 |  |  | — | — |  |
-| E01 | Variant LoRA rank 16 | planned | 0 |  |  | — | — |  |
-| E02 | Variant rank 8 + shared rank 8 | planned | 0 |  |  | — | — |  |
-| F01 | Replace 25% with measured reversals | planned | 0 |  |  | — | — |  |
-| F02 | Re-reference 50% of microbatches | planned | 0 |  |  | — | — |  |
-| G_control_s1 | Fixed-budget control seed 1 | planned | 1 |  |  | — | — |  |
-| G_control_s2 | Fixed-budget control seed 2 | planned | 2 |  |  | — | — |  |
-| G_selected_s1 | Selected recipe seed 1 | planned | 1 |  |  | — | — |  |
-| G_selected_s2 | Selected recipe seed 2 | planned | 2 |  |  | — | — |  |
+| A02 | Lower adapter LR only | completed | 0 | 0 | 2250 | 0.8012 | 0.8432 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/runs/A02/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/runs/A02/attempt_1/train.log) |
+| A03 | Both learning rates lower | completed | 0 | 2 | 2250 | 0.7987 | 0.8699 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/runs/A03/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/runs/A03/attempt_1/train.log) |
+| B01 | Huber loss only | completed | 0 | 2 | 2250 | 0.8107 | 0.8763 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/runs/B01/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/runs/B01/attempt_1/train.log) |
+| B02 | 4x non-destabilizing doubles only | completed | 0 | 0 | 2250 | 0.8092 | 0.8597 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/runs/B02/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/runs/B02/attempt_1/train.log) |
+| B03 | 8:1 double subsampling only | completed | 0 | 0 | 2250 | 0.8081 | 0.8953 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/B03/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/B03/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/583fbc7e39c7493c) |
+| B04 | Separate tasks; singles weight 0.1 | completed | 0 | 0 | 2250 | 0.7891 | 0.8808 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/B04/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/B04/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/145a1d9c184246f1) |
+| B05 | Combined Huber and balancing recipe | completed | 0 | 0 | 2250 | 0.7729 | 0.8590 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/B05/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/B05/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/dc948a29246d430e) |
+| C01 | 1 singles + 2 mixed exposures | completed | 0 | 0 | 2250 | 0.8109 | 0.8511 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/C01/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/C01/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/2b390d0af2f24fd0) |
+| C02 | 6 mixed exposures; budget control | completed | 0 | 0 | 4500 | 0.8136 | 0.8582 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/C02/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/C02/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/80759adb335e4fed) |
+| C03 | 2 singles + 4 mixed exposures | completed | 0 | 0 | 4500 | 0.8135 | 0.8829 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/C03/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/C03/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/04a307f0cdc24657) |
+| D01 | WT-relative mutation readout | completed | 0 | 0 | 4500 | 0.8392 | 0.8771 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/D01/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/D01/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/97771f91f1954041) |
+| D02 | Mutation projection control | completed | 0 | 0 | 4500 | 0.8238 | 0.8804 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/D02/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/D02/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/61570f82aca24dce) |
+| E01 | Variant LoRA rank 16 | completed | 0 | 0 | 4500 | 0.8375 | 0.8826 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/E01/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/E01/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/2bc29d1cf8434a05) |
+| E02 | Variant rank 8 + shared rank 8 | completed | 0 | 0 | 4500 | 0.8542 | 0.8786 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/E02/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/E02/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/0983e4c8b4cc4b3c) |
+| F01 | Replace 25% with measured reversals | completed | 0 | 0 | 4500 | 0.8348 | 0.8909 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/F01/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/F01/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/56101c0e716d407d) |
+| F02 | Re-reference 50% of microbatches | completed | 0 | 0 | 4500 | 0.8253 | 0.9820 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/F02/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/F02/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/e398077462894c7b) |
+| G_control_s1 | Fixed-budget control seed 1 | completed | 1 | 0 | 2250 | 0.8059 | 0.8716 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/G_control_s1/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/G_control_s1/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/d6bca4f810464b5f) |
+| G_control_s2 | Fixed-budget control seed 2 | completed | 2 | 0 | 2250 | 0.8097 | 0.8627 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/G_control_s2/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/G_control_s2/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/1802b4ee2bed4813) |
+| G_selected_s1 | Selected recipe seed 1 | completed | 1 | 0 | 4500 | 0.8521 | 0.9090 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/G_selected_s1/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/G_selected_s1/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/2b84852571924e46) |
+| G_selected_s2 | Selected recipe seed 2 | completed | 2 | 0 | 4500 | 0.8533 | 0.8843 | [run](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/G_selected_s2/attempt_1) · [log](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/runs/G_selected_s2/attempt_1/train.log) · [W&B](https://forge.coreweave.com/wandb/amdickson128-usda/mutant_cache/runs/d3d346b3980642ed) |
 
 ## Promoted controls
 
+- A: A00
+- B: A00
+- C: C02
+- D: D01
+- E: E02
+- F: D01
 
-[Compare checkpoint-selection rules](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/checkpoint_choices.csv) · [Full configuration/results CSV](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/summary.csv)
+[Compare checkpoint-selection rules](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/checkpoint_choices.csv) · [Full configuration/results CSV](/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/summary.csv)
 
 Each stage includes its inherited control as a candidate; a new treatment is carried forward only if its validation score improves. Adapter and augmentation studies branch from the same head-study control. No external benchmark is run by this queue.
 
-Raw registry: `/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v1/registry.json`; configurations: `runs/*/attempt_*/resolved_experiment.json`.
+Raw registry: `/home/andrew/mutant_cache_scratch/runs/mutate_everything_tuning_v2_tracking/registry.json`; configurations: `runs/*/attempt_*/resolved_experiment.json`.

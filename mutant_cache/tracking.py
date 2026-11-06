@@ -32,8 +32,10 @@ def load_tracking_config(path):
     config = json.loads(Path(path).read_text())
     allowed = {"wandb_mode", "wandb_project", "wandb_entity", "wandb_group", "wandb_name",
                "wandb_tags", "wandb_log_every"}
+    from mutant_cache.diagnostics import DEFAULTS
+    allowed.update(DEFAULTS)
     if not isinstance(config, dict) or set(config) - allowed:
-        raise ValueError("tracking config must be an object containing only supported wandb_* settings")
+        raise ValueError("tracking config must contain only supported tracking/diagnostic settings")
     if config.get("wandb_mode", "disabled") not in ("disabled", "online", "offline"):
         raise ValueError("invalid wandb_mode in tracking config")
     interval = config.get("wandb_log_every", 50)
@@ -42,6 +44,12 @@ def load_tracking_config(path):
     if "wandb_tags" in config and (not isinstance(config["wandb_tags"], list)
             or any(not isinstance(tag, str) for tag in config["wandb_tags"])):
         raise ValueError("wandb_tags must be a list of strings")
+    if "diagnostics" in config and not isinstance(config["diagnostics"], bool):
+        raise ValueError("diagnostics must be a boolean")
+    for name in DEFAULTS:
+        if name in config and name != "diagnostics":
+            if type(config[name]) is not int or (name != "diagnostic_seed" and config[name] <= 0):
+                raise ValueError(f"{name} must be a positive integer (seed may be zero)")
     return config
 
 
@@ -87,9 +95,10 @@ class ExperimentTracker:
         self.run = wandb.init(project=getattr(self.args, "wandb_project", "mutant_cache"),
             entity=getattr(self.args, "wandb_entity", None), mode=self.mode,
             group=group, name=name, tags=tags, id=uuid.uuid4().hex[:16],
-            job_type="training", dir=str(self.run_dir),
+            job_type=getattr(self.args, "wandb_job_type", "training"), dir=str(self.run_dir),
             config=json.loads(json.dumps(vars(self.args), default=str)),
             save_code=False, settings={"disable_git": True, "console": "off", "init_timeout": 30})
+        self.sdk = wandb
         try:
             self.run.define_metric("trainer/step")
             self.run.define_metric("*", step_metric="trainer/step")
@@ -134,6 +143,19 @@ class ExperimentTracker:
                   "train/lr_scale": row["lr_scale"]}
         values.update({"val/" + k[4:]: v for k, v in row.items() if k.startswith("val_")})
         self.log(values, row["step"])
+
+    def diagnostic_media(self, tables, scatters, step):
+        if self.run is None or self.broken:
+            return
+        def publish():
+            def table(frame):
+                clean = frame.astype(object).where(frame.notna(), None)
+                return self.sdk.Table(columns=list(clean.columns), data=clean.values.tolist())
+            values = {name: table(frame) for name, frame in tables.items()}
+            values.update({name: self.sdk.plot.scatter(table(frame), "observed", "predicted", title=name)
+                           for name, frame in scatters.items()})
+            self.run.log({"trainer/step": step, **values})
+        self._send(publish)
 
     def summary(self, values):
         if self.run is not None:

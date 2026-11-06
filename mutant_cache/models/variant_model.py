@@ -145,8 +145,11 @@ class VariantModelConfig:
     # protein. f(WT) does not depend on the protein for these heads.
     zero_anchor: bool = False
     composition: str = "joint"          # see COMPOSITIONS
+    interaction_residual: bool = False
 
     def __post_init__(self):
+        if self.interaction_residual and (not self.minimal or self.head == 'mean' or not self.zero_anchor):
+            raise ValueError('interaction residual needs an anchored minimal readout')
         if self.head not in HEADS:
             raise ValueError(f"head must be one of {HEADS}")
         if self.head != "mean":
@@ -506,6 +509,10 @@ class VariantEffectModel(nn.Module):
         else:                                   # sum_mean_count
             d_in = 2 * d + 1
         self.head_mlp = _mlp(d_in, cfg.head_hidden, cfg.head_layers, 1, cfg.dropout)
+        if cfg.interaction_residual:
+            self.residual_mlp = _mlp(d_in, cfg.head_hidden, cfg.head_layers, 1, cfg.dropout)
+            nn.init.zeros_(self.residual_mlp[-1].weight)
+            nn.init.zeros_(self.residual_mlp[-1].bias)
 
     def _backbone_takes_var_mask(self) -> bool:
         """Does ``forward_variants`` accept ``var_mask=``?
@@ -888,6 +895,12 @@ class VariantEffectModel(nn.Module):
         var_ids = (self._position_only_ids(batch) if cfg.position_only
                    else batch.variant_ids)
         if self._new_head():
+            if cfg.interaction_residual and bool((batch.n_mut > 1).any()):
+                additive = self._forward_additive(batch, backend, use_ref_cache)
+                joint = self._readout_forward(batch, ref, var_ids, backend, residual=True)
+                residual = joint.pred.masked_fill(batch.n_mut <= 1, 0.)
+                return VariantPrediction(pred=additive.pred + residual, additive=additive.pred,
+                    interaction=residual, token_score=joint.token_score, hidden=joint.hidden)
             return self._readout_forward(batch, ref, var_ids, backend)
 
         pooled = None
@@ -960,7 +973,7 @@ class VariantEffectModel(nn.Module):
                                  token_score=zt.to(pred.dtype), hidden=out.hidden)
 
     # -- minimal readouts (cfg.head != "mean") --------------------------------
-    def _readout_forward(self, batch, ref, var_ids, backend) -> VariantPrediction:
+    def _readout_forward(self, batch, ref, var_ids, backend, residual=False) -> VariantPrediction:
         """Every backend reduced to the same thing: one final-layer state per
         real substitution, rows in (variant, slot) order. Padded slots never
         enter, so pooling and counts see real substitutions only."""
@@ -974,13 +987,18 @@ class VariantEffectModel(nn.Module):
             h = vout.hidden[rows, slots]
         dt = self.head_mlp[0].weight.dtype
         h = h.to(dt)                                           # (T, d); fp32 head
-        pred = self._readout(batch, ref, h, rows, slots, var_ids)
+        pred = self._readout(batch, ref, h, rows, slots, var_ids,
+                             head=self.residual_mlp if residual else None)
         zt = torch.zeros(batch.n, batch.k, device=pred.device, dtype=pred.dtype)
+        if self.cfg.interaction_residual and not residual:
+            return VariantPrediction(pred=pred, additive=pred, interaction=torch.zeros_like(pred),
+                                     token_score=zt, hidden=h)
         return VariantPrediction(pred=pred, additive=torch.zeros_like(pred),
                                  interaction=pred, token_score=zt, hidden=h)
 
-    def _readout(self, batch, ref, h, rows, slots, var_ids) -> torch.Tensor:
+    def _readout(self, batch, ref, h, rows, slots, var_ids, head=None) -> torch.Tensor:
         cfg = self.cfg
+        head = self.head_mlp if head is None else head
         n = batch.n
         k = torch.bincount(rows, minlength=n).to(h.dtype)      # real substitutions
         logk = torch.log1p(k)[:, None]                         # WT: 0
@@ -1004,11 +1022,11 @@ class VariantEffectModel(nn.Module):
         mean = s / k.clamp_min(1)[:, None]
         x = (torch.cat([mean, logk], -1) if cfg.head == "mean_count"
              else torch.cat([s, mean, logk], -1))
-        out = self.head_mlp(x).squeeze(-1)
+        out = head(x).squeeze(-1)
         if cfg.zero_anchor:
             # the wild type's features are all zero (no substitutions); set its
             # row to exactly 0 rather than f(0) - f(0) up to batch-shape rounding
-            out = out - self.head_mlp(x.new_zeros(1, x.shape[1])).squeeze(-1)
+            out = out - head(x.new_zeros(1, x.shape[1])).squeeze(-1)
             out = out.masked_fill(k == 0, 0.0)
         return out
 

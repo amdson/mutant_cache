@@ -77,6 +77,47 @@ def test_sampler_is_protein_uniform():
     assert mb.index.is_unique
 
 
+def test_full_training_refit_uses_all_development_proteins_and_final_weights(data, tmp_path):
+    a = _args(data, tmp_path, "--full-train-refit", "--final-eval-only", "--save-model")
+    before = megascale.prepare(_args(data, tmp_path))
+    after = megascale.prepare(a)
+    assert len(after['train']) == len(before['train']) + len(before['val'])
+    assert set(after['train'].target_id) == set(before['train'].target_id) | set(before['val'].target_id)
+    assert after['test'].empty
+    out = megascale.run(a)
+    assert len(out['history']) == 1
+    assert out['extra']['selection']['step'] == out['extra']['timing']['total_steps']
+    assert out['extra']['selection']['rule'] == 'fixed_final'
+    assert out['extra']['validation_role'] == 'in_sample_former_validation'
+    assert not (tmp_path/'run/predictions_test.csv').exists()
+    ck = torch.load(tmp_path/'run/model.pt', weights_only=False)
+    assert all(torch.equal(v, ck['trainable_state'][k]) for k, v in megascale.trainable_state(out['model']).items())
+
+
+def test_full_training_refit_rejects_validation_selection(data, tmp_path):
+    with pytest.raises(ValueError, match='final-eval-only'):
+        megascale.prepare(_args(data, tmp_path, '--full-train-refit'))
+
+
+@pytest.mark.parametrize('extra', [
+    ['--stability-rank-weight', '0.3'],
+    ['--interaction-residual', '--shared-lora-r', '4'],
+    ['--train-backbone', '--backbone-train-last', '1'],
+    ['--shared-lora-r', '4', '--shared-lora-targets', 'q', 'k', 'v', 'o', 'gate', 'up', 'down'],
+])
+def test_next_round_training_paths(data, tmp_path, extra):
+    args = _args(data, tmp_path, '--minimal', '--head', 'wt_relative', '--zero-anchor', *extra)
+    out = megascale.run(args)
+    assert out['status'] == 'ok'
+    assert out['extra']['test_summary'] is None
+    if args.backbone_train_last:
+        bb = out['model'].backbone
+        assert not any(p.requires_grad for p in bb.blocks[0].parameters())
+        assert all(p.requires_grad for p in bb.blocks[-1].parameters())
+    if args.interaction_residual:
+        assert out['model'].residual_mlp[-1].weight.abs().sum() > 0
+
+
 def test_saved_checkpoint_rescored_exactly(data, tmp_path):
     a = _args(data, tmp_path, "--save-model")
     megascale.run(a)
