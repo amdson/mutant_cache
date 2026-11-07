@@ -1,0 +1,9 @@
+{
+  "id": "stabilityarc_full66_VILI_CHICK",
+  "status": "ready",
+  "training": {
+    "dataset": "stabilityarc_full66_vili_chick",
+    "split": "outer"
+  },
+  "scope": "All 65 other proteins train; fixed-final checkpoint; published-summary comparison."
+}

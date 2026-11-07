@@ -1,0 +1,9 @@
+{
+  "id": "stabilityarc_full66_MBD11_ARATH",
+  "status": "ready",
+  "training": {
+    "dataset": "stabilityarc_full66_mbd11_arath",
+    "split": "outer"
+  },
+  "scope": "All 65 other proteins train; fixed-final checkpoint; published-summary comparison."
+}

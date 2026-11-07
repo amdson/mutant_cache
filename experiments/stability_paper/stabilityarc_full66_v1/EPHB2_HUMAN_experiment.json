@@ -1,0 +1,9 @@
+{
+  "id": "EPHB2_HUMAN",
+  "protocol": "EPHB2_HUMAN_protocol.json",
+  "recipe": "recipe.json",
+  "seeds": [
+    0
+  ],
+  "question": "Frozen ESMC sparse method on the full StabilityArc leave-one-protein-out benchmark"
+}

@@ -423,7 +423,10 @@ def _run(args, run_dir, tracker) -> dict:
                 else:
                     l, _ = lossfn(out.pred, b.target, group=None, se=None)
                     (l * b.n / len(mb) / args.proteins_per_step).backward()
-                    run_loss += float(l.detach()) * b.n
+                    scalar_loss = float(l.detach())
+                    run_loss += scalar_loss * b.n
+                    if mb.score_set_id.nunique() == 1:
+                        diagnostics.record_assay_loss(mb.score_set_id.iloc[0], scalar_loss, b.n)
                     run_n += b.n
             if weighted_loss:
                 from mutant_cache.training_protocol import stability_loss
@@ -445,7 +448,10 @@ def _run(args, run_dir, tracker) -> dict:
                     if ranks:
                         l = l + ranking_weight * torch.stack(ranks).mean()
                 (l/args.proteins_per_step).backward()
-                run_loss += float(l.detach())*len(mb)
+                scalar_loss = float(l.detach())
+                run_loss += scalar_loss*len(mb)
+                if mb.score_set_id.nunique() == 1:
+                    diagnostics.record_assay_loss(mb.score_set_id.iloc[0], scalar_loss, len(mb))
                 run_n += len(mb)
             seen += len(mb)
         diagnostics.before_clip(opt.param_groups)

@@ -1,0 +1,9 @@
+{
+  "id": "SCIN_STAAR",
+  "protocol": "SCIN_STAAR_protocol.json",
+  "recipe": "recipe.json",
+  "seeds": [
+    0
+  ],
+  "question": "Frozen ESMC sparse method on the full StabilityArc leave-one-protein-out benchmark"
+}

@@ -1,0 +1,34 @@
+{
+  "jobs": [
+    {
+      "name": "CBX4_HUMAN",
+      "experiment": "CBX4_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "SPTN1_CHICK",
+      "experiment": "SPTN1_CHICK_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "SQSTM_MOUSE",
+      "experiment": "SQSTM_MOUSE_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "DN7A_SACS2",
+      "experiment": "DN7A_SACS2_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "ESTA_BACSU",
+      "experiment": "ESTA_BACSU_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "A4_HUMAN",
+      "experiment": "A4_HUMAN_experiment.json",
+      "seed": 0
+    }
+  ]
+}

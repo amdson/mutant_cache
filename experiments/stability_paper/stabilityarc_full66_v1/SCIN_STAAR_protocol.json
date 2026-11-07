@@ -1,0 +1,9 @@
+{
+  "id": "stabilityarc_full66_SCIN_STAAR",
+  "status": "ready",
+  "training": {
+    "dataset": "stabilityarc_full66_scin_staar",
+    "split": "outer"
+  },
+  "scope": "All 65 other proteins train; fixed-final checkpoint; published-summary comparison."
+}

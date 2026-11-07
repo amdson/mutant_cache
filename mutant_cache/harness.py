@@ -96,7 +96,7 @@ def add_common_args(p: argparse.ArgumentParser) -> None:
 
     g = p.add_argument_group("backbone")
     g.add_argument("--backbone", default="esmc_300m",
-                   help="passed to mutant_cache.backbone.load_esmc. Two "
+                   help="ESMC name, esm2_* name, or esm3_sm_open_v1 (sequence only). Two "
                         "special values: 'stub' loads tests/fixtures.StubESMC, "
                         "and 'random:D:H:L' builds the real ESM-C architecture "
                         "at a toy size with random weights — the real cache "
@@ -434,6 +434,9 @@ def load_backbone(args, device, dtype):
         d, h, n = (int(x) for x in args.backbone.split(":")[1:4])
         torch.manual_seed(args.seed)
         return ESMC(d, h, n).to(device=device, dtype=dtype).eval()
+    if args.backbone.startswith("esm3_"):
+        from mutant_cache.backbone.esm3 import load_esm3
+        return load_esm3(args.backbone, device=device, dtype=dtype)
     if args.backbone.startswith("esm2_"):
         from mutant_cache.backbone.esm2 import load_esm2
         return load_esm2(args.backbone, device=device, dtype=dtype)

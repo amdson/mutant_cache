@@ -6,7 +6,11 @@
 | --- | --- | --- |
 | Mutate Everything, ESM-2 | [me_esm2_v1](stability_paper/me_esm2_v1/README.md) | New explicit development recipe; completed full-data comparison linked separately |
 | ESM-MSR, ESM-2 | [msr_esm2_v1](stability_paper/msr_esm2_v1/README.md) | Training protocol available; matched external reproduction remains incomplete |
+| Frozen E02, ESM-MSR internal test (ESM-2) | [msr_esm2_test_v1](stability_paper/msr_esm2_test_v1/README.md) | Pending coordinator stopped before training to switch backbone to ESM3 |
+| ESM3 sequence-only, ESM-MSR internal test | [msr_esm3_test_v1](stability_paper/msr_esm3_test_v1/README.md) | Backbone port and experiment definition validated; training not launched; paper comparator reproduction pending |
 | StabilityArc, ESMC | [arc_esmc_v1](stability_paper/arc_esmc_v1/README.md) | Planned; dataset and evaluator integration required |
+| StabilityArc seven-assay pilot | [protocol](stability_paper/stabilityarc_pilot_v1/README.md) | Completed: higher overall Spearman on 7/7 selected assays; single seed, published-summary comparison |
+| StabilityArc full 66-assay comparison | [protocol](stability_paper/stabilityarc_full66_v1/README.md) | Seven completed seed-0 fits imported; 59 new frozen-recipe fits launched, four concurrently on GPUs 0/2 |
 | E02 accuracy round 2 | [plan](mutate_everything_accuracy_v2/README.md), [status](mutate_everything_accuracy_v2/STATUS.md) | Existing queue; inspect live status before interpreting |
 | Completed full-data ME comparison | [protocol](mutate_everything_full_comparison/README.md) | Existing frozen results under scratch |
 | Matched ME evaluator | [usage](mutate_everything_matched/README.md) | Existing reusable scoring/reporting CLI |

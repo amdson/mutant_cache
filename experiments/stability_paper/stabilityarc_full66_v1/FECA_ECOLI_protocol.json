@@ -1,0 +1,9 @@
+{
+  "id": "stabilityarc_full66_FECA_ECOLI",
+  "status": "ready",
+  "training": {
+    "dataset": "stabilityarc_full66_feca_ecoli",
+    "split": "outer"
+  },
+  "scope": "All 65 other proteins train; fixed-final checkpoint; published-summary comparison."
+}

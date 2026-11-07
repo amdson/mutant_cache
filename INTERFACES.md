@@ -9,6 +9,15 @@ never in the repo.
 
 ## 1. Backbone + variant cache (`mutant_cache/backbone`, `mutant_cache/cache`)
 
+`load_esm3("esm3_sm_open_v1")` implements the same sequence/cache contract
+for ESM3-small-open (1536 hidden units, 48 blocks, 24 heads). It retains
+official missing-track input embeddings and omits the exactly zero frameless
+geometry branch. Inputs are sequence only; coordinates and other tracks are
+not supported. The default weight revision is pinned in `backbone/esm3.py`.
+The loader also accepts `weights_path`, `revision`, and `local_files_only`.
+Its `hidden` is post-norm as required here; official ESM3's `embeddings`
+corresponds to this interface's `hidden_prenorm`.
+
 ```python
 from mutant_cache.backbone import load_esmc            # local, hackable ESM-C
 model = load_esmc("esmc_300m", device="cuda", dtype=torch.bfloat16)

@@ -1,0 +1,9 @@
+{
+  "id": "stabilityarc_full66_UBR5_HUMAN",
+  "status": "ready",
+  "training": {
+    "dataset": "stabilityarc_full66_ubr5_human",
+    "split": "outer"
+  },
+  "scope": "All 65 other proteins train; fixed-final checkpoint; published-summary comparison."
+}

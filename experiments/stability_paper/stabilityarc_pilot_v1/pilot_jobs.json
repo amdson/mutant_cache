@@ -1,0 +1,9 @@
+{
+  "jobs": [
+    {
+      "name": "BCHB_CHLTE",
+      "experiment": "BCHB_CHLTE_experiment.json",
+      "seed": 0
+    }
+  ]
+}

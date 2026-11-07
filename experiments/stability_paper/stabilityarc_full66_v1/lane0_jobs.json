@@ -1,0 +1,154 @@
+{
+  "jobs": [
+    {
+      "name": "AMFR_HUMAN",
+      "experiment": "AMFR_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "BBC1_YEAST",
+      "experiment": "BBC1_YEAST_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "CBPA2_HUMAN",
+      "experiment": "CBPA2_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "CUE1_YEAST",
+      "experiment": "CUE1_YEAST_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "DOCK1_MOUSE",
+      "experiment": "DOCK1_MOUSE_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "FECA_ECOLI",
+      "experiment": "FECA_ECOLI_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "HCP_LAMBD",
+      "experiment": "HCP_LAMBD_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "ILF3_HUMAN",
+      "experiment": "ILF3_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "MAFG_MOUSE",
+      "experiment": "MAFG_MOUSE_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "MYO3_YEAST",
+      "experiment": "MYO3_YEAST_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "NUSA_ECOLI",
+      "experiment": "NUSA_ECOLI_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "OBSCN_HUMAN",
+      "experiment": "OBSCN_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "OTU7A_HUMAN",
+      "experiment": "OTU7A_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "PITX2_HUMAN",
+      "experiment": "PITX2_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "POLG_PESV",
+      "experiment": "POLG_PESV_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "PSAE_PICP2",
+      "experiment": "PSAE_PICP2_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "RBP1_HUMAN",
+      "experiment": "RBP1_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "RCRO_LAMBD",
+      "experiment": "RCRO_LAMBD_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "RFAH_ECOLI",
+      "experiment": "RFAH_ECOLI_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "RPC1_BP434",
+      "experiment": "RPC1_BP434_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "SAV1_MOUSE",
+      "experiment": "SAV1_MOUSE_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "SCIN_STAAR",
+      "experiment": "SCIN_STAAR_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "SOX30_HUMAN",
+      "experiment": "SOX30_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "SPG2_STRSG",
+      "experiment": "SPG2_STRSG_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "SRBS1_HUMAN",
+      "experiment": "SRBS1_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "THO1_YEAST",
+      "experiment": "THO1_YEAST_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "UBE4B_HUMAN",
+      "experiment": "UBE4B_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "VG08_BPP22",
+      "experiment": "VG08_BPP22_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "VRPI_BPT7",
+      "experiment": "VRPI_BPT7_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "YNZC_BACSU",
+      "experiment": "YNZC_BACSU_experiment.json",
+      "seed": 0
+    }
+  ]
+}

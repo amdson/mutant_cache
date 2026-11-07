@@ -1,0 +1,9 @@
+{
+  "id": "stabilityarc_full66_ISDH_STAAW",
+  "status": "ready",
+  "training": {
+    "dataset": "stabilityarc_full66_isdh_staaw",
+    "split": "outer"
+  },
+  "scope": "All 65 other proteins train; fixed-final checkpoint; published-summary comparison."
+}

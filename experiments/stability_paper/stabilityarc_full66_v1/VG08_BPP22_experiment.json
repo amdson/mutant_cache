@@ -1,0 +1,9 @@
+{
+  "id": "VG08_BPP22",
+  "protocol": "VG08_BPP22_protocol.json",
+  "recipe": "recipe.json",
+  "seeds": [
+    0
+  ],
+  "question": "Frozen ESMC sparse method on the full StabilityArc leave-one-protein-out benchmark"
+}

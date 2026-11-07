@@ -304,7 +304,9 @@ class ActivationProfile:
             raise
 
     def collect(self, batch):
-        if self.model.cfg.composition == "additive":
+        # The residual model runs a singles pass and a joint pass; hooks assume one
+        # batch, so profile its additive (singles) pass as for additive composition.
+        if self.model.cfg.composition == "additive" or self.model.cfg.interaction_residual:
             from mutant_cache.models.variant_model import singles_batch
             batch, _ = singles_batch(batch)
         self.batch = batch
@@ -341,6 +343,8 @@ class TrainingDiagnostics:
         self.exposure = Counter()
         self.window_exposure = Counter()
         self.by_reference = Counter()
+        self.assay_loss_sum = Counter()
+        self.assay_loss_rows = Counter()
         self.training_seconds = 0.
         if self.enabled:
             if any(not isinstance(v, int) or v <= 0 for k, v in self.settings.items()
@@ -394,6 +398,26 @@ class TrainingDiagnostics:
             self.step_started = time.perf_counter()
         self.sample_step = self.enabled and (step % self.args.diagnostic_log_every == 0 or step == total)
 
+    def record_assay_loss(self, assay, loss, rows):
+        """Accumulate the actual minibatch objective, weighted by sampled rows.
+
+        Call only for homogeneous assay minibatches. Includes configured depth
+        weights/ranking terms; it is not a physical-unit error metric.
+        """
+        if self.enabled:
+            self.assay_loss_sum[str(assay)] += float(loss) * rows
+            self.assay_loss_rows[str(assay)] += rows
+
+    def assay_loss_values(self):
+        values = {}
+        for assay, rows in self.assay_loss_rows.items():
+            prefix = f"train_assay/{assay}"
+            values[prefix+"/loss"] = self.assay_loss_sum[assay]/rows
+            values[prefix+"/window_rows"] = rows
+        self.assay_loss_sum.clear()
+        self.assay_loss_rows.clear()
+        return values
+
     def before_clip(self, groups):
         if not self.sample_step:
             return
@@ -436,6 +460,7 @@ class TrainingDiagnostics:
         if not self.sample_step:
             return
         values = self.pending
+        values.update(self.assay_loss_values())
         for group in groups:
             name = group["name"]
             sample = self.samples[name]

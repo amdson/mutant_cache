@@ -1,0 +1,9 @@
+{
+  "id": "stabilityarc_pilot_DN7A_SACS2",
+  "status": "ready",
+  "training": {
+    "dataset": "stabilityarc_pilot_dn7a_sacs2",
+    "split": "outer"
+  },
+  "scope": "Count-reconciled pilot; private upstream packed training data unavailable. Fixed-budget refit trains all 65 other proteins. Outer test never used for selection."
+}

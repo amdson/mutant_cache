@@ -1,0 +1,9 @@
+{
+  "id": "stabilityarc_full66_VG08_BPP22",
+  "status": "ready",
+  "training": {
+    "dataset": "stabilityarc_full66_vg08_bpp22",
+    "split": "outer"
+  },
+  "scope": "All 65 other proteins train; fixed-final checkpoint; published-summary comparison."
+}

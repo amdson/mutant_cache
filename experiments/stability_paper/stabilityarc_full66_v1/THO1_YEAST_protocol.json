@@ -1,0 +1,9 @@
+{
+  "id": "stabilityarc_full66_THO1_YEAST",
+  "status": "ready",
+  "training": {
+    "dataset": "stabilityarc_full66_tho1_yeast",
+    "split": "outer"
+  },
+  "scope": "All 65 other proteins train; fixed-final checkpoint; published-summary comparison."
+}

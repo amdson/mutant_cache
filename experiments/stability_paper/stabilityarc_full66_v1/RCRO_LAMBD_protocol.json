@@ -1,0 +1,9 @@
+{
+  "id": "stabilityarc_full66_RCRO_LAMBD",
+  "status": "ready",
+  "training": {
+    "dataset": "stabilityarc_full66_rcro_lambd",
+    "split": "outer"
+  },
+  "scope": "All 65 other proteins train; fixed-final checkpoint; published-summary comparison."
+}

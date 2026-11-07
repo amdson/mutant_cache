@@ -89,7 +89,21 @@ def test_calibration_interaction_and_clean_objective_have_numeric_oracles():
     assert values["interaction/predicted_epsilon_rms"] == pytest.approx(1.5)
 
 
-@pytest.mark.parametrize("mode", ["joint_dropout", "additive", "shared_background"])
+def test_assay_loss_windows_are_row_weighted_and_reset(tmp_path):
+    from types import SimpleNamespace
+    from mutant_cache.diagnostics import TrainingDiagnostics
+    d = TrainingDiagnostics(SimpleNamespace(diagnostics=True), tmp_path, None)
+    d.record_assay_loss('a', 1., 2)
+    d.record_assay_loss('a', 3., 6)
+    d.record_assay_loss('b', 10., 1)
+    values = d.assay_loss_values()
+    assert values['train_assay/a/loss'] == 2.5
+    assert values['train_assay/a/window_rows'] == 8
+    assert values['train_assay/b/loss'] == 10.
+    assert d.assay_loss_values() == {}
+
+
+@pytest.mark.parametrize("mode", ["joint_dropout", "additive", "shared_background", "interaction_residual"])
 def test_diagnostics_preserve_training_and_emit_complete_metrics(tmp_path, mode):
     from fixtures import make_synthetic_dataset
     data, _ = make_synthetic_dataset(tmp_path/"data", n_targets=5, seq_len=24,
@@ -97,7 +111,8 @@ def test_diagnostics_preserve_training_and_emit_complete_metrics(tmp_path, mode)
     extra = {"joint_dropout": ["--dropout", ".2"], "additive": ["--composition", "additive"],
         "shared_background": ["--shared-lora-r", "2", "--head", "wt_relative", "--reference-augmentation", "background",
             "--augmentation-fraction", "1", "--single-only-exposures", ".5", "--loss", "huber_dg",
-            "--single-weight", ".1", "--task-reduction", "depth", "--stabilizing-double-weight", "4"]}[mode]
+            "--single-weight", ".1", "--task-reduction", "depth", "--stabilizing-double-weight", "4"],
+        "interaction_residual": ["--minimal", "--head", "wt_relative", "--zero-anchor", "--interaction-residual"]}[mode]
     def args(directory, diagnostics):
         return build_parser().parse_args(["--data-dir", str(data), "--dataset", "synthetic", "--split", "protein",
             "--backbone", "random:64:4:2", "--device", "cpu", "--precision", "fp32", "--lora-r", "2",
@@ -121,6 +136,10 @@ def test_diagnostics_preserve_training_and_emit_complete_metrics(tmp_path, mode)
     assert {"optimization", "train_probe", "val", "activation", "timing"} <= {r["kind"] for r in records}
     assert [r["step"] for r in records if r["kind"] == "activation"] == [0, 8]
     assert [r["step"] for r in records if r["kind"] == "optimization"] == [2, 4, 6, 8]
+    assay_rows = [r for r in records if r["kind"] == "optimization"]
+    assert all(any(k.startswith('train_assay/') and k.endswith('/loss') for k in r) for r in assay_rows)
+    sampled = sum(v for r in assay_rows for k,v in r.items() if k.startswith('train_assay/') and k.endswith('/window_rows'))
+    assert sampled == instrumented['extra']['timing']['train_rows_seen']
     train_rows = [r for r in records if r["kind"] == "train_probe"]
     val_rows = [r for r in records if r["kind"] == "val"]
     assert all("train_probe/loss" in r and "train_probe/all_spearman_pooled" in r for r in train_rows)

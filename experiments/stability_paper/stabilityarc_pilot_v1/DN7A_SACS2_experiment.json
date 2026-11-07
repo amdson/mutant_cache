@@ -1,0 +1,9 @@
+{
+  "id": "DN7A_SACS2",
+  "protocol": "DN7A_SACS2_protocol.json",
+  "recipe": "recipe.json",
+  "seeds": [
+    0
+  ],
+  "question": "ESMC sparse method versus published StabilityArc per-assay score under protein holdout"
+}

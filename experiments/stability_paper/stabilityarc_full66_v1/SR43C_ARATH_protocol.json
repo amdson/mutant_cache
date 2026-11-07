@@ -1,0 +1,9 @@
+{
+  "id": "stabilityarc_full66_SR43C_ARATH",
+  "status": "ready",
+  "training": {
+    "dataset": "stabilityarc_full66_sr43c_arath",
+    "split": "outer"
+  },
+  "scope": "All 65 other proteins train; fixed-final checkpoint; published-summary comparison."
+}

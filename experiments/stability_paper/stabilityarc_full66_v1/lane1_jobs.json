@@ -1,0 +1,149 @@
+{
+  "jobs": [
+    {
+      "name": "ARGR_ECOLI",
+      "experiment": "ARGR_ECOLI_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "CATR_CHLRE",
+      "experiment": "CATR_CHLRE_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "CSN4_MOUSE",
+      "experiment": "CSN4_MOUSE_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "DNJA1_HUMAN",
+      "experiment": "DNJA1_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "EPHB2_HUMAN",
+      "experiment": "EPHB2_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "FKBP3_HUMAN",
+      "experiment": "FKBP3_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "HECD1_HUMAN",
+      "experiment": "HECD1_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "ISDH_STAAW",
+      "experiment": "ISDH_STAAW_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "MBD11_ARATH",
+      "experiment": "MBD11_ARATH_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "NKX31_HUMAN",
+      "experiment": "NKX31_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "NUSG_MYCTU",
+      "experiment": "NUSG_MYCTU_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "ODP2_GEOSE",
+      "experiment": "ODP2_GEOSE_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "PIN1_HUMAN",
+      "experiment": "PIN1_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "PKN1_HUMAN",
+      "experiment": "PKN1_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "PR40A_HUMAN",
+      "experiment": "PR40A_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "RAD_ANTMA",
+      "experiment": "RAD_ANTMA_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "RCD1_ARATH",
+      "experiment": "RCD1_ARATH_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "RD23A_HUMAN",
+      "experiment": "RD23A_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "RL20_AQUAE",
+      "experiment": "RL20_AQUAE_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "RS15_GEOSE",
+      "experiment": "RS15_GEOSE_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "SBI_STAAM",
+      "experiment": "SBI_STAAM_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "SDA_BACSU",
+      "experiment": "SDA_BACSU_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "SPA_STAAU",
+      "experiment": "SPA_STAAU_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "SR43C_ARATH",
+      "experiment": "SR43C_ARATH_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "TCRG1_MOUSE",
+      "experiment": "TCRG1_MOUSE_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "TNKS2_HUMAN",
+      "experiment": "TNKS2_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "UBR5_HUMAN",
+      "experiment": "UBR5_HUMAN_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "VILI_CHICK",
+      "experiment": "VILI_CHICK_experiment.json",
+      "seed": 0
+    },
+    {
+      "name": "YAIA_ECOLI",
+      "experiment": "YAIA_ECOLI_experiment.json",
+      "seed": 0
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "id": "A4_HUMAN",
+  "protocol": "A4_HUMAN_protocol.json",
+  "recipe": "recipe.json",
+  "seeds": [
+    0
+  ],
+  "question": "ESMC sparse method versus published StabilityArc per-assay score under protein holdout"
+}

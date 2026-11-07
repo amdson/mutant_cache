@@ -1,0 +1,28 @@
+{
+  "id": "msr_esm3_test_v1",
+  "question": "Frozen E02 methodology with sequence-only ESM3-small on the released ESM-MSR split",
+  "protocol": "../../../datasets/protocols/esm_msr_v1.json",
+  "recipe": "recipe.json",
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "training": {
+    "eval_protein_col": "code_wt",
+    "eval_min_n": 2,
+    "final_test": true,
+    "selection": "spearman",
+    "wandb_mode": "online",
+    "wandb_project": "mutant_cache",
+    "wandb_entity": "amdickson128-usda",
+    "wandb_group": "esm_msr_esm3_test_v1",
+    "wandb_tags": [
+      "esm-msr",
+      "frozen-e02",
+      "internal-test"
+    ],
+    "diagnostics": true
+  },
+  "notes": "Settings frozen before test evaluation. Train on released train only; select each seed checkpoint by validation macro Spearman; score released test once per seed. No test-dependent selection or full train+val refit. ESM-MSR comparator reproduction is pending. Sequence-only ESM3; structure conditioning and upstream MSR augmentation remain differences."
+}

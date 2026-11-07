@@ -1,0 +1,9 @@
+{
+  "id": "stabilityarc_full66_NUSA_ECOLI",
+  "status": "ready",
+  "training": {
+    "dataset": "stabilityarc_full66_nusa_ecoli",
+    "split": "outer"
+  },
+  "scope": "All 65 other proteins train; fixed-final checkpoint; published-summary comparison."
+}
